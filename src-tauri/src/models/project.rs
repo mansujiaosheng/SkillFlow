@@ -38,6 +38,17 @@ pub struct RuleBlock {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct NodeResource {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+    pub path: String,
+    pub resource_type: String,
+    pub description: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkflowData {
     pub nodes: Vec<Value>,
     pub edges: Vec<Value>,
@@ -50,6 +61,7 @@ pub struct ProjectState {
     pub project: ProjectMeta,
     pub workflow: WorkflowData,
     pub rules: Vec<RuleBlock>,
+    pub resources: Vec<NodeResource>,
     pub settings: ProjectSettings,
 }
 

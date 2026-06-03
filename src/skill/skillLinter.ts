@@ -1,6 +1,7 @@
 import type {
   LintIssue,
   LintReport,
+  NodeResource,
   SkillFlowEdge,
   SkillFlowNode,
 } from "../types/project";
@@ -62,6 +63,7 @@ function hasCycle(nodes: SkillFlowNode[], edges: SkillFlowEdge[]): boolean {
 export function lintProject(
   nodes: SkillFlowNode[],
   edges: SkillFlowEdge[],
+  projectResources: NodeResource[] = [],
 ): LintReport {
   const critical: LintIssue[] = [];
   const warnings: LintIssue[] = [];
@@ -128,7 +130,20 @@ export function lintProject(
   });
 
   nodes.forEach((node) => {
+    const invalidRefs = node.data.resourceRefs.filter(
+      (resourceId) => !projectResources.some((resource) => resource.id === resourceId),
+    );
+    invalidRefs.forEach((resourceId) => {
+      warnings.push(
+        issue("warning", `资源引用失效：${resourceId}`, node.id, "重新选择资源库中的资源"),
+      );
+    });
+
+    const linkedResources = projectResources.filter((resource) =>
+      node.data.resourceRefs.includes(resource.id),
+    );
     const resources = [
+      ...linkedResources,
       ...node.data.scripts,
       ...node.data.referenceResources,
       ...node.data.assets,

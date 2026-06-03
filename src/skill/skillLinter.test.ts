@@ -44,4 +44,13 @@ describe("lintProject", () => {
     expect(report.warnings.some((item) => item.message.includes("缺少路径"))).toBe(true);
     expect(report.warnings.some((item) => item.message.includes("缺少用途说明"))).toBe(true);
   });
+
+  it("reports invalid project resource references", () => {
+    const node = createSkillNode("a", { x: 0, y: 0 }, "资源 Skill");
+    node.data.resourceRefs = ["missing"];
+
+    const report = lintProject([node], [], []);
+
+    expect(report.warnings.some((item) => item.message.includes("资源引用失效"))).toBe(true);
+  });
 });

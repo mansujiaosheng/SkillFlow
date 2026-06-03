@@ -19,6 +19,7 @@ pub fn run() {
       commands::project::create_project,
       commands::project::open_project,
       commands::project::save_project,
+      commands::project::import_resource,
       commands::project::generate_skills,
       commands::project::lint_project
     ])

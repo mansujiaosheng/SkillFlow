@@ -95,6 +95,7 @@ export interface SkillNodeData extends Record<string, unknown> {
   checks: string[];
   fallbacks: string[];
   references: string[];
+  resourceRefs: string[];
   referenceResources: NodeResource[];
   scripts: NodeResource[];
   assets: NodeResource[];
@@ -136,6 +137,7 @@ export interface ProjectState {
   project: ProjectMeta;
   workflow: WorkflowData;
   rules: RuleBlock[];
+  resources: NodeResource[];
   settings: ProjectSettings;
 }
 
@@ -160,6 +162,7 @@ export interface SaveProjectPayload {
   project: ProjectMeta;
   workflow: WorkflowData;
   rules: RuleBlock[];
+  resources: NodeResource[];
   settings: ProjectSettings;
 }
 
@@ -250,6 +253,7 @@ export function createDefaultSkillData(name = "新 Skill"): SkillNodeData {
     checks: [],
     fallbacks: [],
     references: [],
+    resourceRefs: [],
     referenceResources: [],
     scripts: [],
     assets: [],
@@ -278,6 +282,7 @@ export function normalizeSkillData(data: Partial<SkillNodeData>): SkillNodeData 
     checks: data.checks || [],
     fallbacks: data.fallbacks || [],
     references: data.references || [],
+    resourceRefs: data.resourceRefs || [],
     referenceResources: data.referenceResources || [],
     scripts: data.scripts || [],
     assets: data.assets || [],
@@ -306,6 +311,7 @@ export function normalizeProjectSettings(
 export function normalizeProjectState(state: ProjectState): ProjectState {
   return {
     ...state,
+    resources: state.resources || [],
     settings: normalizeProjectSettings(state.settings),
     workflow: {
       nodes: state.workflow.nodes.map((node) => ({
@@ -315,6 +321,49 @@ export function normalizeProjectState(state: ProjectState): ProjectState {
       edges: state.workflow.edges,
     },
   };
+}
+
+export function createNodeFromTemplate(
+  templateType: NodeKind,
+  position: XYPosition,
+): SkillFlowNode {
+  const node = createSkillNode(`node-${Date.now()}`, position, "新 Skill");
+  node.data.nodeType = templateType;
+
+  if (templateType === "global_rule") {
+    node.data.name = "全局规则";
+    node.data.label = "全局规则";
+    node.data.folder = "00-global-rules";
+    node.data.description = "定义整个 Skill 项目必须遵守的全局约束。";
+    node.data.requires = ["所有 Skill 必须遵守本节点定义的全局规则。"];
+    node.data.forbids = ["禁止覆盖用户明确写下的规则。"];
+    node.data.outputs = ["全局约束清单"];
+  } else if (templateType === "check") {
+    node.data.name = "质量检查";
+    node.data.label = "质量检查";
+    node.data.folder = "quality-check";
+    node.data.description = "检查上游 Skill 输出是否完整、可执行、可交接。";
+    node.data.inputs = ["上游 Skill 产物", "检查标准"];
+    node.data.outputs = ["检查问题列表", "修复建议"];
+    node.data.steps = ["读取上游输出", "逐项核对完成标准", "输出问题和建议"];
+    node.data.checks = ["必须列出严重问题、警告和建议"];
+  } else if (templateType === "export") {
+    node.data.name = "导出交付";
+    node.data.label = "导出交付";
+    node.data.folder = "export-delivery";
+    node.data.description = "整理 Skill、workflow 和资源引用，形成最终交付。";
+    node.data.inputs = ["已生成 Skill", "workflow.md", "绑定资源"];
+    node.data.outputs = ["交付目录", "资源清单"];
+    node.data.steps = ["汇总生成物", "核对资源相对路径", "输出交付说明"];
+  } else if (templateType === "note") {
+    node.data.name = "备注";
+    node.data.label = "备注";
+    node.data.folder = "note";
+    node.data.description = "画布说明节点，不生成 Skill。";
+    node.data.outputs = [];
+  }
+
+  return node;
 }
 
 export function createSkillNode(

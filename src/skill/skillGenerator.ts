@@ -48,6 +48,27 @@ function nodeNameById(nodes: SkillFlowNode[], id: string): string {
   return nodes.find((node) => node.id === id)?.data.name || id;
 }
 
+function resourcesForNode(
+  node: SkillFlowNode,
+  projectResources: NodeResource[] = [],
+) {
+  const linked = projectResources.filter((resource) =>
+    node.data.resourceRefs.includes(resource.id),
+  );
+  return {
+    scripts: [...linked.filter((resource) => resource.kind === "script"), ...node.data.scripts],
+    references: [
+      ...linked.filter((resource) => resource.kind === "reference"),
+      ...node.data.referenceResources,
+    ],
+    assets: [...linked.filter((resource) => resource.kind === "asset"), ...node.data.assets],
+    attachments: [
+      ...linked.filter((resource) => resource.kind === "attachment"),
+      ...node.data.attachments,
+    ],
+  };
+}
+
 function renderIncoming(
   node: SkillFlowNode,
   nodes: SkillFlowNode[],
@@ -91,8 +112,10 @@ function sectionContent(
   node: SkillFlowNode,
   nodes: SkillFlowNode[],
   edges: SkillFlowEdge[],
+  projectResources: NodeResource[] = [],
 ): string {
   const data = node.data;
+  const linkedResources = resourcesForNode(node, projectResources);
   const requires = [...data.requires, ...rulesOf(data, "require")];
   const forbids = [...data.forbids, ...rulesOf(data, "forbid")];
   const checks = [...data.checks, ...rulesOf(data, "check")];
@@ -101,7 +124,7 @@ function sectionContent(
   const references = [
     ...data.references,
     ...rulesOf(data, "ref"),
-    ...data.referenceResources.map((resource) => {
+    ...linkedResources.references.map((resource) => {
       const path = resource.path ? `：${resource.path}` : "";
       const description = resource.description ? ` - ${resource.description}` : "";
       return `${resource.name || "未命名参考资料"}${path}${description}`;
@@ -122,9 +145,9 @@ function sectionContent(
     checks: renderList(checks),
     fallbacks: renderList(fallbacks),
     references: renderList(references),
-    scripts: renderResources(data.scripts),
-    assets: renderResources(data.assets),
-    attachments: renderResources(data.attachments),
+    scripts: renderResources(linkedResources.scripts),
+    assets: renderResources(linkedResources.assets),
+    attachments: renderResources(linkedResources.attachments),
   };
 
   return map[key];
@@ -135,38 +158,45 @@ function renderSection(
   node: SkillFlowNode,
   nodes: SkillFlowNode[],
   edges: SkillFlowEdge[],
+  projectResources: NodeResource[] = [],
 ): string {
   if (!section.enabled) return "";
-  return `## ${section.title}\n\n${sectionContent(section.key, node, nodes, edges)}`;
+  return `## ${section.title}\n\n${sectionContent(
+    section.key,
+    node,
+    nodes,
+    edges,
+    projectResources,
+  )}`;
 }
 
 function placeholderValues(
   node: SkillFlowNode,
   nodes: SkillFlowNode[],
   edges: SkillFlowEdge[],
+  projectResources: NodeResource[] = [],
 ): Record<string, string> {
   const data = node.data;
-  const values: Record<string, string> = {
+  return {
     name: data.name,
     description: data.description,
-    whenToUse: sectionContent("whenToUse", node, nodes, edges),
-    whenNotToUse: sectionContent("whenNotToUse", node, nodes, edges),
-    inputs: sectionContent("inputs", node, nodes, edges),
-    outputs: sectionContent("outputs", node, nodes, edges),
-    upstream: sectionContent("upstream", node, nodes, edges),
-    downstream: sectionContent("downstream", node, nodes, edges),
-    requires: sectionContent("requires", node, nodes, edges),
-    forbids: sectionContent("forbids", node, nodes, edges),
-    tools: sectionContent("tools", node, nodes, edges),
-    steps: sectionContent("steps", node, nodes, edges),
-    checks: sectionContent("checks", node, nodes, edges),
-    fallbacks: sectionContent("fallbacks", node, nodes, edges),
-    references: sectionContent("references", node, nodes, edges),
-    scripts: sectionContent("scripts", node, nodes, edges),
-    assets: sectionContent("assets", node, nodes, edges),
-    attachments: sectionContent("attachments", node, nodes, edges),
+    whenToUse: sectionContent("whenToUse", node, nodes, edges, projectResources),
+    whenNotToUse: sectionContent("whenNotToUse", node, nodes, edges, projectResources),
+    inputs: sectionContent("inputs", node, nodes, edges, projectResources),
+    outputs: sectionContent("outputs", node, nodes, edges, projectResources),
+    upstream: sectionContent("upstream", node, nodes, edges, projectResources),
+    downstream: sectionContent("downstream", node, nodes, edges, projectResources),
+    requires: sectionContent("requires", node, nodes, edges, projectResources),
+    forbids: sectionContent("forbids", node, nodes, edges, projectResources),
+    tools: sectionContent("tools", node, nodes, edges, projectResources),
+    steps: sectionContent("steps", node, nodes, edges, projectResources),
+    checks: sectionContent("checks", node, nodes, edges, projectResources),
+    fallbacks: sectionContent("fallbacks", node, nodes, edges, projectResources),
+    references: sectionContent("references", node, nodes, edges, projectResources),
+    scripts: sectionContent("scripts", node, nodes, edges, projectResources),
+    assets: sectionContent("assets", node, nodes, edges, projectResources),
+    attachments: sectionContent("attachments", node, nodes, edges, projectResources),
   };
-  return values;
 }
 
 function renderAdvancedTemplate(
@@ -174,8 +204,9 @@ function renderAdvancedTemplate(
   node: SkillFlowNode,
   nodes: SkillFlowNode[],
   edges: SkillFlowEdge[],
+  projectResources: NodeResource[] = [],
 ): string {
-  const values = placeholderValues(node, nodes, edges);
+  const values = placeholderValues(node, nodes, edges, projectResources);
   return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
     return values[key] ?? match;
   });
@@ -185,12 +216,14 @@ export function resolveSkillFolders(nodes: SkillFlowNode[]): Record<string, stri
   const counts = new Map<string, number>();
   const result: Record<string, string> = {};
 
-  nodes.forEach((node) => {
-    const base = slugify(node.data.folder || node.data.name) || slugify(node.id) || "skill";
-    const count = counts.get(base) || 0;
-    counts.set(base, count + 1);
-    result[node.id] = count === 0 ? base : `${base}-${count + 1}`;
-  });
+  nodes
+    .filter((node) => node.data.nodeType !== "note")
+    .forEach((node) => {
+      const base = slugify(node.data.folder || node.data.name) || slugify(node.id) || "skill";
+      const count = counts.get(base) || 0;
+      counts.set(base, count + 1);
+      result[node.id] = count === 0 ? base : `${base}-${count + 1}`;
+    });
 
   return result;
 }
@@ -200,6 +233,7 @@ export function generateSkillMarkdown(
   nodes: SkillFlowNode[],
   edges: SkillFlowEdge[],
   settings?: ProjectSettings,
+  projectResources: NodeResource[] = [],
 ): string {
   if (node.data.editMode === "manual" && node.data.manualMarkdown.trim()) {
     return node.data.manualMarkdown.trimEnd() + "\n";
@@ -213,12 +247,12 @@ export function generateSkillMarkdown(
 
   const body =
     settings?.templateMode === "advanced" && settings.advancedTemplate.trim()
-      ? renderAdvancedTemplate(settings.advancedTemplate, node, nodes, edges)
+      ? renderAdvancedTemplate(settings.advancedTemplate, node, nodes, edges, projectResources)
       : (settings?.templateSections?.length
           ? settings.templateSections
           : createDefaultTemplateSections()
         )
-          .map((section) => renderSection(section, node, nodes, edges))
+          .map((section) => renderSection(section, node, nodes, edges, projectResources))
           .filter(Boolean)
           .join("\n\n");
 
@@ -234,10 +268,14 @@ export function generateAllSkillMarkdown(
   nodes: SkillFlowNode[],
   edges: SkillFlowEdge[],
   settings?: ProjectSettings,
+  projectResources: NodeResource[] = [],
 ): Record<string, string> {
   return Object.fromEntries(
     nodes
-      .filter((node) => node.data.nodeType === "skill")
-      .map((node) => [node.id, generateSkillMarkdown(node, nodes, edges, settings)]),
+      .filter((node) => node.data.nodeType !== "note")
+      .map((node) => [
+        node.id,
+        generateSkillMarkdown(node, nodes, edges, settings, projectResources),
+      ]),
   );
 }

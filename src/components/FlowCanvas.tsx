@@ -12,8 +12,9 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useCallback } from "react";
 import { SkillNode } from "./SkillNode";
+import { SemanticEdge } from "./SemanticEdge";
 import {
-  createSkillNode,
+  createNodeFromTemplate,
   createWorkflowEdgeData,
   type SkillFlowEdge,
   type SkillFlowNode,
@@ -21,6 +22,10 @@ import {
 
 const nodeTypes = {
   skillNode: SkillNode,
+};
+
+const edgeTypes = {
+  semantic: SemanticEdge,
 };
 
 interface FlowCanvasProps {
@@ -51,6 +56,7 @@ export function FlowCanvas({
           {
             ...connection,
             id: `edge-${connection.source}-${connection.target}-${Date.now()}`,
+            type: "semantic",
             data: createWorkflowEdgeData(),
             animated: true,
           },
@@ -73,9 +79,7 @@ export function FlowCanvas({
         x: event.clientX,
         y: event.clientY,
       });
-      const node = createSkillNode(`node-${Date.now()}`, position, "新 Skill");
-      node.data.nodeType = type === "skill" ? "skill" : (type as SkillFlowNode["data"]["nodeType"]);
-      node.data.label = node.data.name;
+      const node = createNodeFromTemplate(type as SkillFlowNode["data"]["nodeType"], position);
       onNodesUpdate([...nodes, node]);
     },
     [nodes, onNodesUpdate, reactFlow],
@@ -87,6 +91,7 @@ export function FlowCanvas({
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}

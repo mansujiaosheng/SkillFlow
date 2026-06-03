@@ -25,14 +25,18 @@ import { generateSkillMarkdown } from "../skill/skillGenerator";
 import { lintProject } from "../skill/skillLinter";
 import {
   defaultSettings,
-  createDefaultSkillData,
+  createNodeFromTemplate,
+  createNodeResource,
   normalizeProjectState,
   normalizeProjectSettings,
   schemaVersion,
   slugify,
   type CreateProjectPayload,
   type LintReport,
+  type NodeKind,
+  type NodeResource,
   type ProjectState,
+  type ResourceKind,
   type SaveProjectPayload,
   type SkillFlowEdge,
   type SkillFlowNode,
@@ -67,6 +71,7 @@ function createLocalProject(name: string, description: string, parentDir: string
     },
     workflow: { nodes: [], edges: [] },
     rules: [],
+    resources: [],
     settings: normalizeProjectSettings(defaultSettings),
   };
 }
@@ -184,6 +189,7 @@ export default function App() {
           projectState.workflow.nodes,
           projectState.workflow.edges,
           projectState.settings,
+          projectState.resources,
         ),
       );
     }
@@ -193,7 +199,7 @@ export default function App() {
   const lintAll = async () => {
     if (!projectState) return;
     const report = await invoke<LintReport>("lint_project", { payload: projectState }).catch(() =>
-      lintProject(projectState.workflow.nodes, projectState.workflow.edges),
+      lintProject(projectState.workflow.nodes, projectState.workflow.edges, projectState.resources),
     );
     setLintReport(report);
     setStatus("Lint 检查完成");
@@ -217,23 +223,45 @@ export default function App() {
     updateWorkflow({ nodes: [...projectState.workflow.nodes, node] });
   };
 
-  const addPaletteNode = (type: string) => {
+  const addPaletteNode = (type: NodeKind) => {
     if (!projectState) return;
     const index = projectState.workflow.nodes.length;
-    const data = createDefaultSkillData(type === "skill" ? "新 Skill" : type);
-    data.nodeType = type === "skill" ? "skill" : (type as SkillFlowNode["data"]["nodeType"]);
-    data.folder = type === "skill" ? data.folder : type;
-
-    const node: SkillFlowNode = {
-      id: `node-${Date.now()}`,
-      type: "skillNode",
-      position: { x: 140 + index * 36, y: 120 + index * 28 },
-      data,
-    };
+    const node = createNodeFromTemplate(type, { x: 140 + index * 36, y: 120 + index * 28 });
     updateWorkflow({ nodes: [...projectState.workflow.nodes, node] });
     setSelectedNodeId(node.id);
     setSelectedEdgeId(undefined);
     setStatus(`已添加节点：${node.data.name}`);
+  };
+
+  const updateResources = (resources: NodeResource[]) => {
+    setProjectState((current) =>
+      current
+        ? {
+            ...current,
+            project: { ...current.project, updatedAt: nowIso() },
+            resources,
+          }
+        : current,
+    );
+  };
+
+  const importResource = async (kind: ResourceKind) => {
+    const resource = createNodeResource(kind);
+    if (isTauriRuntime() && projectState) {
+      const selected = await open({ multiple: false }).catch(() => null);
+      if (!selected || Array.isArray(selected)) return;
+      resource.path = selected;
+      resource.name = selected.split(/[\\/]/).pop() || resource.kind;
+      const imported = await invoke<NodeResource>("import_resource", {
+        projectRoot: projectState.projectRoot,
+        resource,
+      }).catch(() => resource);
+      updateResources([...projectState.resources, imported]);
+      return;
+    }
+    const name = window.prompt("资源名称", resource.kind) || "";
+    const path = window.prompt("相对路径或 URL", "") || "";
+    updateResources([...projectState!.resources, { ...resource, name, path }]);
   };
 
   const updateSettings = (settings: ProjectState["settings"]) => {
@@ -324,7 +352,12 @@ export default function App() {
           </nav>
         </header>
         <div className="workspace">
-          <SidebarPalette onAddNode={addPaletteNode} />
+          <SidebarPalette
+            resources={projectState.resources}
+            onAddNode={addPaletteNode}
+            onImportResource={importResource}
+            onUpdateResources={updateResources}
+          />
           <FlowCanvas
             nodes={nodes}
             edges={edges}
@@ -350,6 +383,7 @@ export default function App() {
           <InspectorPanel
             selectedNode={selectedNode}
             selectedEdge={selectedEdge}
+            resources={projectState.resources}
             settings={projectState.settings}
             onUpdateNode={(node) =>
               updateWorkflow({
@@ -365,57 +399,70 @@ export default function App() {
             onGenerateNode={(nodeId) => {
               const node = nodes.find((item) => item.id === nodeId);
               if (!node) return;
-              setPreview(generateSkillMarkdown(node, nodes, edges, projectState.settings));
+              setPreview(
+                generateSkillMarkdown(
+                  node,
+                  nodes,
+                  edges,
+                  projectState.settings,
+                  projectState.resources,
+                ),
+              );
               setStatus(`已生成预览：${node.data.name}`);
             }}
             onLintNode={(nodeId) => {
               const node = nodes.find((item) => item.id === nodeId);
               if (!node) return;
-              const report = lintProject([node], []);
+              const report = lintProject([node], [], projectState.resources);
               setLintReport(report);
               setStatus(`已检查当前 Skill：${node.data.name}`);
             }}
           />
         </div>
         {lintReport ? (
-          <section className="lint-panel">
+          <section className="bottom-problems-panel">
             <div className="lint-panel-header">
-              <strong>Lint 结果</strong>
+              <strong>
+                Lint 结果 · {lintReport.score}/100 · 严重 {lintReport.critical.length} · 警告{" "}
+                {lintReport.warnings.length} · 建议 {lintReport.suggestions.length}
+              </strong>
               <button type="button" onClick={() => setLintReport(undefined)}>
                 关闭
               </button>
             </div>
-            {[
-              ["严重问题", lintReport.critical],
-              ["警告", lintReport.warnings],
-              ["建议", lintReport.suggestions],
-            ].map(([title, issues]) => (
-              <div className="lint-group" key={title as string}>
-                <h3>{title as string}</h3>
-                {(issues as typeof lintReport.critical).length ? (
-                  (issues as typeof lintReport.critical).map((issue) => {
-                    const nodeName =
-                      nodes.find((node) => node.id === issue.nodeId)?.data.name ||
-                      issue.nodeId ||
-                      "项目";
-                    return (
-                      <button
-                        className="lint-item"
-                        key={issue.id}
-                        type="button"
-                        onClick={() => selectLintNode(issue.nodeId)}
-                      >
-                        <span>{nodeName}</span>
-                        <strong>{issue.message}</strong>
-                        {issue.action ? <small>{issue.action}</small> : null}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <p>暂无</p>
-                )}
-              </div>
-            ))}
+            <div className="lint-panel-content">
+              {[
+                ["严重问题", lintReport.critical],
+                ["警告", lintReport.warnings],
+                ["建议", lintReport.suggestions],
+              ].map(([title, issues]) => (
+                <div className="lint-group" key={title as string}>
+                  <h3>{title as string}</h3>
+                  {(issues as typeof lintReport.critical).length ? (
+                    (issues as typeof lintReport.critical).map((issue) => {
+                      const nodeName =
+                        nodes.find((node) => node.id === issue.nodeId)?.data.name ||
+                        issue.nodeId ||
+                        "项目";
+                      return (
+                        <button
+                          className="lint-item"
+                          key={issue.id}
+                          type="button"
+                          onClick={() => selectLintNode(issue.nodeId)}
+                        >
+                          <span>{nodeName}</span>
+                          <strong>{issue.message}</strong>
+                          {issue.action ? <small>{issue.action}</small> : null}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <p>暂无</p>
+                  )}
+                </div>
+              ))}
+            </div>
           </section>
         ) : null}
         {preview ? (

@@ -57,6 +57,7 @@ const ruleTypes: RuleType[] = ["require", "forbid", "check", "tool", "handoff"];
 interface InspectorPanelProps {
   selectedNode?: SkillFlowNode;
   selectedEdge?: SkillFlowEdge;
+  resources: NodeResource[];
   settings: ProjectSettings;
   onUpdateNode: (node: SkillFlowNode) => void;
   onUpdateEdge: (edge: SkillFlowEdge) => void;
@@ -156,6 +157,7 @@ function ResourceEditor({
 export function InspectorPanel({
   selectedNode,
   selectedEdge,
+  resources,
   settings,
   onUpdateNode,
   onUpdateEdge,
@@ -380,6 +382,30 @@ export function InspectorPanel({
       </Section>
 
       <Section title="绑定资源">
+        <div className="resource-ref-list">
+          <div className="rule-header">
+            <span>项目资源库</span>
+          </div>
+          {resources.length ? (
+            resources.map((resource) => (
+              <label className="checkbox" key={resource.id}>
+                <input
+                  checked={selectedNode.data.resourceRefs.includes(resource.id)}
+                  type="checkbox"
+                  onChange={(event) => {
+                    const refs = event.target.checked
+                      ? [...selectedNode.data.resourceRefs, resource.id]
+                      : selectedNode.data.resourceRefs.filter((id) => id !== resource.id);
+                    updateData({ resourceRefs: refs });
+                  }}
+                />
+                {resource.name || resource.path || "未命名资源"} · {resource.path || "未设置路径"}
+              </label>
+            ))
+          ) : (
+            <p className="empty-copy">资源库为空。请在左侧“资源库”添加。</p>
+          )}
+        </div>
         <ResourceEditor
           title="脚本"
           kind="script"

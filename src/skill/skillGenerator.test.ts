@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultTemplateSections, createSkillNode, createWorkflowEdgeData } from "../types/project";
+import {
+  createDefaultTemplateSections,
+  createNodeFromTemplate,
+  createSkillNode,
+  createWorkflowEdgeData,
+  normalizeProjectState,
+} from "../types/project";
 import { generateSkillMarkdown, resolveSkillFolders } from "./skillGenerator";
 
 describe("generateSkillMarkdown", () => {
@@ -69,5 +75,48 @@ describe("generateSkillMarkdown", () => {
     });
 
     expect(markdown).toContain("检查脚本 (ps1)：scripts/check.ps1 - 辅助检查输入");
+  });
+
+  it("renders linked project resources and skips note nodes", () => {
+    const node = createSkillNode("a", { x: 0, y: 0 }, "资源 Skill");
+    node.data.resourceRefs = ["res-1"];
+
+    const markdown = generateSkillMarkdown(node, [node], [], undefined, [
+      {
+        id: "res-1",
+        kind: "script",
+        name: "共享脚本",
+        path: "scripts/shared.ps1",
+        resourceType: "ps1",
+        description: "共享检查脚本",
+      },
+    ]);
+
+    expect(markdown).toContain("共享脚本 (ps1)：scripts/shared.ps1 - 共享检查脚本");
+
+    const note = createNodeFromTemplate("note", { x: 0, y: 0 });
+    expect(resolveSkillFolders([node, note])).not.toHaveProperty(note.id);
+  });
+
+  it("normalizes old project states without resources", () => {
+    const node = createSkillNode("a", { x: 0, y: 0 }, "旧节点");
+    const normalized = normalizeProjectState({
+      projectRoot: "",
+      project: {
+        schemaVersion: "0.1.0",
+        projectId: "p",
+        name: "p",
+        description: "",
+        targetPlatforms: [],
+        createdAt: "",
+        updatedAt: "",
+      },
+      workflow: { nodes: [node], edges: [] },
+      rules: [],
+      settings: undefined as never,
+    } as never);
+
+    expect(normalized.resources).toEqual([]);
+    expect(normalized.workflow.nodes[0].data.resourceRefs).toEqual([]);
   });
 });

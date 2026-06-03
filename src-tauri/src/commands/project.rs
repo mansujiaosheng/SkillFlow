@@ -1,6 +1,6 @@
 use crate::models::project::{
-    CreateProjectPayload, LintIssue, LintReport, ProjectMeta, ProjectSettings, ProjectState,
-    WorkflowData,
+    CreateProjectPayload, LintIssue, LintReport, NodeResource, ProjectMeta, ProjectSettings,
+    ProjectState, WorkflowData,
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -99,6 +99,7 @@ fn initial_state(payload: CreateProjectPayload, root: &Path) -> ProjectState {
             edges: Vec::new(),
         },
         rules: Vec::new(),
+        resources: Vec::new(),
         settings: ProjectSettings {
             theme: "system".to_string(),
             auto_lint: true,
@@ -108,6 +109,34 @@ fn initial_state(payload: CreateProjectPayload, root: &Path) -> ProjectState {
             advanced_template: Some(String::new()),
         },
     }
+}
+
+fn default_resources_path(root: &Path) -> PathBuf {
+    root.join(".skillflow/resources.json")
+}
+
+fn read_optional_json<T: serde::de::DeserializeOwned + Default>(path: &Path) -> Result<T, String> {
+    if path.exists() {
+        read_json(path)
+    } else {
+        Ok(T::default())
+    }
+}
+
+fn resource_dir(kind: &str) -> &'static str {
+    match kind {
+        "script" => "scripts",
+        "reference" => "references",
+        "asset" => "assets",
+        "attachment" => "attachments",
+        _ => "attachments",
+    }
+}
+
+fn relative_path(root: &Path, path: &Path) -> Option<String> {
+    path.strip_prefix(root)
+        .ok()
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
 }
 
 fn skill_data(node: &Value) -> Option<&Value> {
@@ -592,7 +621,7 @@ fn lint_state(state: &ProjectState) -> LintReport {
 pub fn create_project(payload: CreateProjectPayload) -> Result<ProjectState, String> {
     let root = project_dir(&payload.parent_dir, &payload.name);
     fs::create_dir_all(root.join(".skillflow")).map_err(|err| format!("创建目录失败：{err}"))?;
-    for dir in ["skills", "references", "assets", "exports"] {
+    for dir in ["skills", "scripts", "references", "assets", "attachments", "exports"] {
         fs::create_dir_all(root.join(dir)).map_err(|err| format!("创建目录失败：{err}"))?;
     }
 
@@ -618,6 +647,7 @@ pub fn open_project(project_root: String) -> Result<ProjectState, String> {
         project: read_json(&root.join(".skillflow/project.json"))?,
         workflow: read_json(&root.join(".skillflow/workflow.json"))?,
         rules: read_json(&root.join(".skillflow/rules.json"))?,
+        resources: read_optional_json(&default_resources_path(&root))?,
         settings: read_json(&root.join(".skillflow/settings.json"))?,
     })
 }
@@ -632,6 +662,7 @@ pub fn save_project(payload: ProjectState) -> Result<(), String> {
         root.join(".skillflow/workflow.json"),
         root.join(".skillflow/nodes.json"),
         root.join(".skillflow/rules.json"),
+        root.join(".skillflow/resources.json"),
         root.join(".skillflow/settings.json"),
     ] {
         ensure_inside_project(&root, &target)?;
@@ -641,8 +672,43 @@ pub fn save_project(payload: ProjectState) -> Result<(), String> {
     write_json(&root.join(".skillflow/workflow.json"), &payload.workflow)?;
     write_json(&root.join(".skillflow/nodes.json"), &payload.workflow.nodes)?;
     write_json(&root.join(".skillflow/rules.json"), &payload.rules)?;
+    write_json(&default_resources_path(&root), &payload.resources)?;
     write_json(&root.join(".skillflow/settings.json"), &payload.settings)?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn import_resource(project_root: String, mut resource: NodeResource) -> Result<NodeResource, String> {
+    let root = PathBuf::from(&project_root);
+    fs::create_dir_all(root.join(resource_dir(&resource.kind)))
+        .map_err(|err| format!("创建资源目录失败：{err}"))?;
+
+    if resource.path.trim().is_empty() {
+        return Ok(resource);
+    }
+    if resource.path.starts_with("http://") || resource.path.starts_with("https://") {
+        return Ok(resource);
+    }
+
+    let source = PathBuf::from(&resource.path);
+    if !source.exists() {
+        return Ok(resource);
+    }
+
+    if let Some(relative) = relative_path(&root, &source) {
+        resource.path = relative;
+        return Ok(resource);
+    }
+
+    let file_name = source
+        .file_name()
+        .ok_or_else(|| "资源路径缺少文件名".to_string())?;
+    let target = root.join(resource_dir(&resource.kind)).join(file_name);
+    ensure_inside_project(&root, &target)?;
+    fs::copy(&source, &target)
+        .map_err(|err| format!("复制资源失败 {}：{err}", source.display()))?;
+    resource.path = relative_path(&root, &target).unwrap_or_else(|| target.to_string_lossy().to_string());
+    Ok(resource)
 }
 
 #[tauri::command]
