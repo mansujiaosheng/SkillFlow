@@ -20,8 +20,10 @@ pub fn run() {
       commands::project::open_project,
       commands::project::save_project,
       commands::project::import_resource,
-      commands::project::generate_skills,
-      commands::project::lint_project
+      commands::project::write_generated_files,
+      commands::project::write_lint_report,
+      commands::project::load_recent_projects,
+      commands::project::save_recent_projects
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

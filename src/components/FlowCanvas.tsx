@@ -58,7 +58,6 @@ export function FlowCanvas({
             id: `edge-${connection.source}-${connection.target}-${Date.now()}`,
             type: "semantic",
             data: createWorkflowEdgeData(),
-            animated: true,
           },
           edges,
         ),
@@ -102,7 +101,6 @@ export function FlowCanvas({
         }}
         onDrop={onDrop}
         defaultEdgeOptions={{
-          animated: true,
           style: { stroke: "#8fb7aa", strokeWidth: 2 },
         }}
         connectionLineStyle={{ stroke: "#d8f3e8", strokeWidth: 2 }}

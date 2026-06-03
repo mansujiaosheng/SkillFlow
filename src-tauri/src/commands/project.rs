@@ -1,12 +1,12 @@
 use crate::models::project::{
-    CreateProjectPayload, LintIssue, LintReport, NodeResource, ProjectMeta, ProjectSettings,
-    ProjectState, WorkflowData,
+    CreateProjectPayload, GeneratedFile, LintReport, NodeResource, ProjectMeta, ProjectSettings,
+    ProjectState, RecentProject, WorkflowData, WriteGeneratedFilesPayload,
 };
-use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use chrono::{SecondsFormat, Utc};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Manager};
 
 fn unix_timestamp() -> u64 {
     SystemTime::now()
@@ -16,7 +16,7 @@ fn unix_timestamp() -> u64 {
 }
 
 fn iso_now() -> String {
-    format!("{}Z", unix_timestamp())
+    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 fn slugify(value: &str) -> String {
@@ -76,9 +76,18 @@ fn write_json<T: serde::Serialize>(path: &Path, value: &T) -> Result<(), String>
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, String> {
-    let content =
-        fs::read_to_string(path).map_err(|err| format!("读取文件失败 {}：{err}", path.display()))?;
-    serde_json::from_str(&content).map_err(|err| format!("解析 JSON 失败 {}：{err}", path.display()))
+    let content = fs::read_to_string(path)
+        .map_err(|err| format!("读取文件失败 {}：{err}", path.display()))?;
+    serde_json::from_str(&content)
+        .map_err(|err| format!("解析 JSON 失败 {}：{err}", path.display()))
+}
+
+fn read_optional_json<T: serde::de::DeserializeOwned + Default>(path: &Path) -> Result<T, String> {
+    if path.exists() {
+        read_json(path)
+    } else {
+        Ok(T::default())
+    }
 }
 
 fn initial_state(payload: CreateProjectPayload, root: &Path) -> ProjectState {
@@ -100,13 +109,11 @@ fn initial_state(payload: CreateProjectPayload, root: &Path) -> ProjectState {
         },
         rules: Vec::new(),
         resources: Vec::new(),
+        templates: Vec::new(),
         settings: ProjectSettings {
             theme: "system".to_string(),
             auto_lint: true,
             auto_generate_on_save: false,
-            template_mode: Some("simple".to_string()),
-            template_sections: None,
-            advanced_template: Some(String::new()),
         },
     }
 }
@@ -115,12 +122,8 @@ fn default_resources_path(root: &Path) -> PathBuf {
     root.join(".skillflow/resources.json")
 }
 
-fn read_optional_json<T: serde::de::DeserializeOwned + Default>(path: &Path) -> Result<T, String> {
-    if path.exists() {
-        read_json(path)
-    } else {
-        Ok(T::default())
-    }
+fn default_templates_path(root: &Path) -> PathBuf {
+    root.join(".skillflow/templates.json")
 }
 
 fn resource_dir(kind: &str) -> &'static str {
@@ -139,489 +142,46 @@ fn relative_path(root: &Path, path: &Path) -> Option<String> {
         .map(|relative| relative.to_string_lossy().replace('\\', "/"))
 }
 
-fn skill_data(node: &Value) -> Option<&Value> {
-    node.get("data")
-}
-
-fn array_field(data: &Value, key: &str) -> Vec<String> {
-    data.get(key)
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::trim)
-                .filter(|item| !item.is_empty())
-                .map(ToOwned::to_owned)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn string_field(data: &Value, key: &str) -> String {
-    data.get(key)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .trim()
-        .to_string()
-}
-
-fn render_list(items: &[String], fallback: &str) -> String {
-    if items.is_empty() {
-        fallback.to_string()
-    } else {
-        items
-            .iter()
-            .map(|item| format!("- {item}"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-}
-
-fn render_resources(data: &Value, key: &str) -> String {
-    data.get(key)
-        .and_then(Value::as_array)
-        .map(|resources| {
-            resources
-                .iter()
-                .filter_map(|resource| {
-                    let name = string_field(resource, "name");
-                    let path = string_field(resource, "path");
-                    let resource_type = string_field(resource, "resourceType");
-                    let description = string_field(resource, "description");
-                    if name.is_empty() && path.is_empty() && resource_type.is_empty() && description.is_empty() {
-                        return None;
-                    }
-                    let type_label = if resource_type.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" ({resource_type})")
-                    };
-                    let path_label = if path.is_empty() {
-                        String::new()
-                    } else {
-                        format!("：{path}")
-                    };
-                    let description_label = if description.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" - {description}")
-                    };
-                    Some(format!(
-                        "- {}{}{}{}",
-                        if name.is_empty() { "未命名资源" } else { &name },
-                        type_label,
-                        path_label,
-                        description_label
-                    ))
-                })
-                .collect::<Vec<_>>()
-        })
-        .filter(|items| !items.is_empty())
-        .map(|items| items.join("\n"))
-        .unwrap_or_else(|| "- 未配置".to_string())
-}
-
-fn rule_contents(data: &Value, rule_type: &str) -> Vec<String> {
-    data.get("rules")
-        .and_then(Value::as_array)
-        .map(|rules| {
-            rules
-                .iter()
-                .filter(|rule| {
-                    rule.get("type")
-                        .and_then(Value::as_str)
-                        .is_some_and(|value| value == rule_type)
-                })
-                .filter_map(|rule| rule.get("content").and_then(Value::as_str))
-                .map(str::trim)
-                .filter(|item| !item.is_empty())
-                .map(ToOwned::to_owned)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn edge_data<'a>(edge: &'a Value, key: &str) -> Option<&'a Value> {
-    edge.get("data").and_then(|data| data.get(key))
-}
-
-fn node_name_by_id(nodes: &[Value], id: &str) -> String {
-    nodes
-        .iter()
-        .find(|node| node.get("id").and_then(Value::as_str) == Some(id))
-        .and_then(skill_data)
-        .map(|data| string_field(data, "name"))
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| id.to_string())
-}
-
-fn render_incoming(node: &Value, nodes: &[Value], edges: &[Value]) -> String {
-    let node_id = node.get("id").and_then(Value::as_str).unwrap_or_default();
-    let lines = edges
-        .iter()
-        .filter(|edge| edge.get("target").and_then(Value::as_str) == Some(node_id))
-        .map(|edge| {
-            let source = edge.get("source").and_then(Value::as_str).unwrap_or_default();
-            let relation = edge_data(edge, "relation")
-                .and_then(Value::as_str)
-                .unwrap_or("handoff");
-            let handoff = edge_data(edge, "handoffData")
-                .and_then(Value::as_array)
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .collect::<Vec<_>>()
-                        .join("、")
-                })
-                .filter(|value| !value.is_empty())
-                .map(|value| format!("；交接：{value}"))
-                .unwrap_or_default();
-            format!("- {} ({relation}){handoff}", node_name_by_id(nodes, source))
-        })
-        .collect::<Vec<_>>();
-
-    if lines.is_empty() {
-        "- 无上游依赖".to_string()
-    } else {
-        lines.join("\n")
-    }
-}
-
-fn render_outgoing(node: &Value, nodes: &[Value], edges: &[Value]) -> String {
-    let node_id = node.get("id").and_then(Value::as_str).unwrap_or_default();
-    let lines = edges
-        .iter()
-        .filter(|edge| edge.get("source").and_then(Value::as_str) == Some(node_id))
-        .map(|edge| {
-            let target = edge.get("target").and_then(Value::as_str).unwrap_or_default();
-            let relation = edge_data(edge, "relation")
-                .and_then(Value::as_str)
-                .unwrap_or("handoff");
-            let handoff = edge_data(edge, "handoffData")
-                .and_then(Value::as_array)
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .collect::<Vec<_>>()
-                        .join("、")
-                })
-                .filter(|value| !value.is_empty())
-                .map(|value| format!("；交接：{value}"))
-                .unwrap_or_default();
-            format!("- {} ({relation}){handoff}", node_name_by_id(nodes, target))
-        })
-        .collect::<Vec<_>>();
-
-    if lines.is_empty() {
-        "- 无下游交接".to_string()
-    } else {
-        lines.join("\n")
-    }
-}
-
-fn generate_skill_markdown(node: &Value, nodes: &[Value], edges: &[Value]) -> Option<String> {
-    let data = skill_data(node)?;
-    let edit_mode = string_field(data, "editMode");
-    let manual = string_field(data, "manualMarkdown");
-    if edit_mode == "manual" && !manual.is_empty() {
-        return Some(format!("{}\n", manual.trim_end()));
+fn write_generated_file(root: &Path, file: &GeneratedFile) -> Result<(), String> {
+    let relative = Path::new(&file.path);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(format!("生成路径非法：{}", file.path));
     }
 
-    let name = string_field(data, "name");
-    let description = string_field(data, "description");
-    let description = if description.is_empty() {
-        format!("{name}，在相关任务触发时用于生成规范化 Agent Skill。")
-    } else {
-        description
-    };
-
-    let mut requires = array_field(data, "requires");
-    requires.extend(rule_contents(data, "require"));
-    let mut forbids = array_field(data, "forbids");
-    forbids.extend(rule_contents(data, "forbid"));
-    let mut checks = array_field(data, "checks");
-    checks.extend(rule_contents(data, "check"));
-    let mut tools = array_field(data, "tools");
-    tools.extend(rule_contents(data, "tool"));
-    let mut fallbacks = array_field(data, "fallbacks");
-    fallbacks.extend(rule_contents(data, "fallback"));
-    let mut references = array_field(data, "references");
-    references.extend(rule_contents(data, "ref"));
-    references.extend(
-        data.get("referenceResources")
-            .and_then(Value::as_array)
-            .map(|resources| {
-                resources
-                    .iter()
-                    .map(|resource| {
-                        let name = string_field(resource, "name");
-                        let path = string_field(resource, "path");
-                        let description = string_field(resource, "description");
-                        format!(
-                            "{}{}{}",
-                            if name.is_empty() { "未命名参考资料" } else { &name },
-                            if path.is_empty() { String::new() } else { format!("：{path}") },
-                            if description.is_empty() { String::new() } else { format!(" - {description}") }
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default(),
-    );
-
-    Some(format!(
-        "---\nname: {name}\ndescription: \"{}\"\n---\n\n# {name}\n\n## 使用时机\n\n{}\n\n## 不适用场景\n\n{}\n\n## 输入\n\n{}\n\n## 输出\n\n{}\n\n## 上游依赖\n\n{}\n\n## 下游交接\n\n{}\n\n## 必须遵守\n\n{}\n\n## 禁止行为\n\n{}\n\n## 可用工具\n\n{}\n\n## 执行流程\n\n{}\n\n## 完成标准\n\n{}\n\n## 失败处理\n\n{}\n\n## 参考资料\n\n{}\n\n## 绑定脚本\n\n{}\n\n## 绑定资源\n\n{}\n\n## 其他附件\n\n{}\n",
-        description.replace('"', "\\\""),
-        render_list(&array_field(data, "whenToUse"), "- 未配置"),
-        render_list(&array_field(data, "whenNotToUse"), "- 未配置"),
-        render_list(&array_field(data, "inputs"), "- 未配置"),
-        render_list(&array_field(data, "outputs"), "- 未配置"),
-        render_incoming(node, nodes, edges),
-        render_outgoing(node, nodes, edges),
-        render_list(&requires, "- 未配置"),
-        render_list(&forbids, "- 未配置"),
-        render_list(&tools, "- 未配置"),
-        render_list(&array_field(data, "steps"), "- 未配置"),
-        render_list(&checks, "- 未配置"),
-        render_list(&fallbacks, "- 未配置"),
-        render_list(&references, "- 未配置"),
-        render_resources(data, "scripts"),
-        render_resources(data, "assets"),
-        render_resources(data, "attachments"),
-    ))
+    let target = root.join(relative);
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("创建生成目录失败：{err}"))?;
+    }
+    ensure_inside_project(root, &target)?;
+    fs::write(&target, &file.content)
+        .map_err(|err| format!("写入生成文件失败 {}：{err}", target.display()))
 }
 
-fn unique_skill_folder(data: &Value, node: &Value, counts: &mut HashMap<String, usize>) -> String {
-    let folder = string_field(data, "folder");
-    let base = if folder.is_empty() {
-        slugify(&string_field(data, "name"))
-    } else {
-        slugify(&folder)
-    };
-    let base = if base.is_empty() {
-        slugify(node.get("id").and_then(Value::as_str).unwrap_or("skill"))
-    } else {
-        base
-    };
-    let count = counts.entry(base.clone()).or_insert(0);
-    *count += 1;
-    if *count == 1 {
-        base
-    } else {
-        format!("{base}-{count}")
-    }
-}
-
-fn generate_workflow_markdown(nodes: &[Value], edges: &[Value]) -> String {
-    let node_lines = nodes
-        .iter()
-        .enumerate()
-        .filter_map(|(index, node)| {
-            let data = skill_data(node)?;
-            Some(format!(
-                "{}. {} ({}) - {}",
-                index + 1,
-                string_field(data, "name"),
-                string_field(data, "folder"),
-                string_field(data, "description")
-            ))
-        })
-        .collect::<Vec<_>>();
-
-    let edge_lines = edges
-        .iter()
-        .map(|edge| {
-            let source = edge.get("source").and_then(Value::as_str).unwrap_or_default();
-            let target = edge.get("target").and_then(Value::as_str).unwrap_or_default();
-            let relation = edge_data(edge, "relation")
-                .and_then(Value::as_str)
-                .unwrap_or("handoff");
-            format!(
-                "- {} -> {}：{}",
-                node_name_by_id(nodes, source),
-                node_name_by_id(nodes, target),
-                relation
-            )
-        })
-        .collect::<Vec<_>>();
-
-    format!(
-        "# SkillFlow Workflow\n\n## Skill 节点\n\n{}\n\n## 流程关系\n\n{}\n",
-        if node_lines.is_empty() {
-            "- 暂无节点".to_string()
-        } else {
-            node_lines.join("\n")
-        },
-        if edge_lines.is_empty() {
-            "- 暂无流程关系".to_string()
-        } else {
-            edge_lines.join("\n")
-        }
-    )
-}
-
-fn lint_issue(level: &str, message: &str, node_id: Option<&str>) -> LintIssue {
-    LintIssue {
-        id: format!("{}-{}-{}", level, node_id.unwrap_or("project"), message),
-        level: level.to_string(),
-        message: message.to_string(),
-        node_id: node_id.map(ToOwned::to_owned),
-    }
-}
-
-fn has_cycle(nodes: &[Value], edges: &[Value]) -> bool {
-    let mut graph: HashMap<String, Vec<String>> = HashMap::new();
-    for node in nodes {
-        if let Some(id) = node.get("id").and_then(Value::as_str) {
-            graph.insert(id.to_string(), Vec::new());
-        }
-    }
-    for edge in edges {
-        let relation = edge_data(edge, "relation")
-            .and_then(Value::as_str)
-            .unwrap_or("handoff");
-        if relation == "parallel_with" {
-            continue;
-        }
-        if let (Some(source), Some(target)) = (
-            edge.get("source").and_then(Value::as_str),
-            edge.get("target").and_then(Value::as_str),
-        ) {
-            graph.entry(source.to_string()).or_default().push(target.to_string());
-        }
-    }
-
-    fn visit(
-        id: &str,
-        graph: &HashMap<String, Vec<String>>,
-        visiting: &mut HashSet<String>,
-        visited: &mut HashSet<String>,
-    ) -> bool {
-        if visiting.contains(id) {
-            return true;
-        }
-        if visited.contains(id) {
-            return false;
-        }
-        visiting.insert(id.to_string());
-        for next in graph.get(id).into_iter().flatten() {
-            if visit(next, graph, visiting, visited) {
-                return true;
-            }
-        }
-        visiting.remove(id);
-        visited.insert(id.to_string());
-        false
-    }
-
-    let mut visiting = HashSet::new();
-    let mut visited = HashSet::new();
-    graph
-        .keys()
-        .any(|id| visit(id, &graph, &mut visiting, &mut visited))
-}
-
-fn lint_state(state: &ProjectState) -> LintReport {
-    let mut critical = Vec::new();
-    let mut warnings = Vec::new();
-    let mut suggestions = Vec::new();
-    let weak_words = ["可以", "建议", "尽量", "最好", "maybe", "should"];
-    let dangerous_words = ["自动删除文件", "自动发送敏感信息", "执行未知脚本"];
-
-    for node in &state.workflow.nodes {
-        let node_id = node.get("id").and_then(Value::as_str).unwrap_or_default();
-        let Some(data) = skill_data(node) else {
-            critical.push(lint_issue("critical", "节点缺少 data", Some(node_id)));
-            continue;
-        };
-        let markdown = generate_skill_markdown(node, &state.workflow.nodes, &state.workflow.edges)
-            .unwrap_or_default();
-
-        if !markdown.starts_with("---") {
-            critical.push(lint_issue("critical", "缺少 YAML frontmatter", Some(node_id)));
-        }
-        if string_field(data, "name").is_empty() {
-            critical.push(lint_issue("critical", "缺少 name", Some(node_id)));
-        }
-        if string_field(data, "description").is_empty() {
-            critical.push(lint_issue("critical", "缺少 description", Some(node_id)));
-        }
-        for (field, message) in [
-            ("whenToUse", "没有配置使用时机"),
-            ("inputs", "没有配置输入"),
-            ("outputs", "没有配置输出"),
-            ("requires", "没有必须遵守规则"),
-            ("forbids", "没有禁止行为"),
-            ("steps", "没有执行流程"),
-            ("checks", "没有完成标准"),
-        ] {
-            if array_field(data, field).is_empty() {
-                warnings.push(lint_issue("warning", message, Some(node_id)));
-            }
-        }
-        for word in weak_words {
-            if markdown.contains(word) {
-                warnings.push(lint_issue(
-                    "warning",
-                    &format!("出现弱约束词：“{word}”"),
-                    Some(node_id),
-                ));
-            }
-        }
-        for word in dangerous_words {
-            if markdown.contains(word) {
-                critical.push(lint_issue(
-                    "critical",
-                    &format!("出现危险行为：“{word}”"),
-                    Some(node_id),
-                ));
-            }
-        }
-        let connected = state.workflow.edges.iter().any(|edge| {
-            edge.get("source").and_then(Value::as_str) == Some(node_id)
-                || edge.get("target").and_then(Value::as_str) == Some(node_id)
-        });
-        if state.workflow.nodes.len() > 1 && !connected {
-            warnings.push(lint_issue("warning", "存在孤立节点", Some(node_id)));
-        }
-        let has_outgoing = state
-            .workflow
-            .edges
-            .iter()
-            .any(|edge| edge.get("source").and_then(Value::as_str) == Some(node_id));
-        if !array_field(data, "outputs").is_empty() && !has_outgoing {
-            suggestions.push(lint_issue(
-                "suggestion",
-                "关键节点没有下游交接说明",
-                Some(node_id),
-            ));
-        }
-    }
-
-    if has_cycle(&state.workflow.nodes, &state.workflow.edges) {
-        critical.push(lint_issue("critical", "流程中存在循环依赖", None));
-    }
-
-    let penalty = critical.len() as i32 * 14 + warnings.len() as i32 * 5 + suggestions.len() as i32 * 2;
-    let score = 0.max(100 - penalty) as u16;
-
-    LintReport {
-        score,
-        critical,
-        warnings,
-        suggestions,
-        generated_at: iso_now(),
-    }
+fn recent_projects_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("获取应用数据目录失败：{err}"))?;
+    fs::create_dir_all(&dir).map_err(|err| format!("创建应用数据目录失败：{err}"))?;
+    Ok(dir.join("recent-projects.json"))
 }
 
 #[tauri::command]
 pub fn create_project(payload: CreateProjectPayload) -> Result<ProjectState, String> {
     let root = project_dir(&payload.parent_dir, &payload.name);
     fs::create_dir_all(root.join(".skillflow")).map_err(|err| format!("创建目录失败：{err}"))?;
-    for dir in ["skills", "scripts", "references", "assets", "attachments", "exports"] {
+    for dir in [
+        "skills",
+        "scripts",
+        "references",
+        "assets",
+        "attachments",
+        "exports",
+    ] {
         fs::create_dir_all(root.join(dir)).map_err(|err| format!("创建目录失败：{err}"))?;
     }
 
@@ -629,7 +189,10 @@ pub fn create_project(payload: CreateProjectPayload) -> Result<ProjectState, Str
     save_project(state.clone())?;
     fs::write(
         root.join("README.md"),
-        format!("# {}\n\n{}\n", state.project.name, state.project.description),
+        format!(
+            "# {}\n\n{}\n",
+            state.project.name, state.project.description
+        ),
     )
     .map_err(|err| format!("写入 README.md 失败：{err}"))?;
     Ok(state)
@@ -648,6 +211,7 @@ pub fn open_project(project_root: String) -> Result<ProjectState, String> {
         workflow: read_json(&root.join(".skillflow/workflow.json"))?,
         rules: read_json(&root.join(".skillflow/rules.json"))?,
         resources: read_optional_json(&default_resources_path(&root))?,
+        templates: read_optional_json(&default_templates_path(&root))?,
         settings: read_json(&root.join(".skillflow/settings.json"))?,
     })
 }
@@ -663,6 +227,7 @@ pub fn save_project(payload: ProjectState) -> Result<(), String> {
         root.join(".skillflow/nodes.json"),
         root.join(".skillflow/rules.json"),
         root.join(".skillflow/resources.json"),
+        root.join(".skillflow/templates.json"),
         root.join(".skillflow/settings.json"),
     ] {
         ensure_inside_project(&root, &target)?;
@@ -673,20 +238,24 @@ pub fn save_project(payload: ProjectState) -> Result<(), String> {
     write_json(&root.join(".skillflow/nodes.json"), &payload.workflow.nodes)?;
     write_json(&root.join(".skillflow/rules.json"), &payload.rules)?;
     write_json(&default_resources_path(&root), &payload.resources)?;
+    write_json(&default_templates_path(&root), &payload.templates)?;
     write_json(&root.join(".skillflow/settings.json"), &payload.settings)?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn import_resource(project_root: String, mut resource: NodeResource) -> Result<NodeResource, String> {
+pub fn import_resource(
+    project_root: String,
+    mut resource: NodeResource,
+) -> Result<NodeResource, String> {
     let root = PathBuf::from(&project_root);
     fs::create_dir_all(root.join(resource_dir(&resource.kind)))
         .map_err(|err| format!("创建资源目录失败：{err}"))?;
 
-    if resource.path.trim().is_empty() {
-        return Ok(resource);
-    }
-    if resource.path.starts_with("http://") || resource.path.starts_with("https://") {
+    if resource.path.trim().is_empty()
+        || resource.path.starts_with("http://")
+        || resource.path.starts_with("https://")
+    {
         return Ok(resource);
     }
 
@@ -707,55 +276,40 @@ pub fn import_resource(project_root: String, mut resource: NodeResource) -> Resu
     ensure_inside_project(&root, &target)?;
     fs::copy(&source, &target)
         .map_err(|err| format!("复制资源失败 {}：{err}", source.display()))?;
-    resource.path = relative_path(&root, &target).unwrap_or_else(|| target.to_string_lossy().to_string());
+    resource.path =
+        relative_path(&root, &target).unwrap_or_else(|| target.to_string_lossy().to_string());
     Ok(resource)
 }
 
 #[tauri::command]
-pub fn generate_skills(payload: ProjectState) -> Result<(), String> {
+pub fn write_generated_files(payload: WriteGeneratedFilesPayload) -> Result<(), String> {
     let root = PathBuf::from(&payload.project_root);
-    save_project(payload.clone())?;
-    fs::create_dir_all(root.join("skills")).map_err(|err| format!("创建 skills 目录失败：{err}"))?;
-    let mut folder_counts = HashMap::new();
-
-    for node in &payload.workflow.nodes {
-        let Some(data) = skill_data(node) else {
-            continue;
-        };
-        let folder = unique_skill_folder(data, node, &mut folder_counts);
-        if folder.is_empty() {
-            continue;
-        }
-        let skill_dir = root.join("skills").join(folder);
-        let target = skill_dir.join("SKILL.md");
-        fs::create_dir_all(&skill_dir).map_err(|err| format!("创建 Skill 目录失败：{err}"))?;
-        ensure_inside_project(&root, &target)?;
-        if let Some(markdown) =
-            generate_skill_markdown(node, &payload.workflow.nodes, &payload.workflow.edges)
-        {
-            fs::write(&target, markdown)
-                .map_err(|err| format!("写入 SKILL.md 失败 {}：{err}", target.display()))?;
-        }
+    save_project(payload.project_state)?;
+    for file in &payload.files {
+        write_generated_file(&root, file)?;
     }
-
-    let workflow_path = root.join("workflow.md");
-    ensure_inside_project(&root, &workflow_path)?;
-    fs::write(
-        workflow_path,
-        generate_workflow_markdown(&payload.workflow.nodes, &payload.workflow.edges),
-    )
-    .map_err(|err| format!("写入 workflow.md 失败：{err}"))?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn lint_project(payload: ProjectState) -> Result<LintReport, String> {
-    let root = PathBuf::from(&payload.project_root);
-    let report = lint_state(&payload);
+pub fn write_lint_report(project_root: String, report: LintReport) -> Result<(), String> {
+    let root = PathBuf::from(project_root);
     let target = root.join(".skillflow/lint-report.json");
     ensure_inside_project(&root, &target)?;
-    write_json(&target, &report)?;
-    Ok(report)
+    write_json(&target, &report)
+}
+
+#[tauri::command]
+pub fn load_recent_projects(app: AppHandle) -> Result<Vec<RecentProject>, String> {
+    read_optional_json(&recent_projects_path(&app)?)
+}
+
+#[tauri::command]
+pub fn save_recent_projects(
+    app: AppHandle,
+    recent_projects: Vec<RecentProject>,
+) -> Result<(), String> {
+    write_json(&recent_projects_path(&app)?, &recent_projects)
 }
 
 #[cfg(test)]
@@ -769,12 +323,41 @@ mod tests {
     }
 
     #[test]
-    fn cycle_detection_finds_dependency_loop() {
-        let nodes = vec![json!({"id": "a"}), json!({"id": "b"})];
-        let edges = vec![
-            json!({"source": "a", "target": "b", "data": {"relation": "depends_on"}}),
-            json!({"source": "b", "target": "a", "data": {"relation": "depends_on"}}),
-        ];
-        assert!(has_cycle(&nodes, &edges));
+    fn generated_file_rejects_parent_paths() {
+        let file = GeneratedFile {
+            path: "../outside.md".to_string(),
+            content: String::new(),
+        };
+        let root = std::env::current_dir().unwrap();
+        assert!(write_generated_file(&root, &file).is_err());
+    }
+
+    #[test]
+    fn missing_resources_file_defaults_to_empty_list() {
+        let dir = std::env::temp_dir().join(format!("skillflow-test-{}", unix_timestamp()));
+        fs::create_dir_all(&dir).unwrap();
+        let loaded: Vec<NodeResource> = read_optional_json(&dir.join("resources.json")).unwrap();
+        assert!(loaded.is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn lint_report_serializes_action_field() {
+        let report = LintReport {
+            score: 100,
+            critical: vec![],
+            warnings: vec![crate::models::project::LintIssue {
+                id: "w".to_string(),
+                level: "warning".to_string(),
+                message: "message".to_string(),
+                node_id: Some("node".to_string()),
+                action: Some("fix".to_string()),
+            }],
+            suggestions: vec![],
+            generated_at: iso_now(),
+        };
+
+        let value = serde_json::to_value(report).unwrap();
+        assert_eq!(value["warnings"][0]["action"], json!("fix"));
     }
 }

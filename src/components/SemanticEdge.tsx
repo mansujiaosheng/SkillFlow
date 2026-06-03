@@ -1,14 +1,20 @@
 import {
   BaseEdge,
   EdgeLabelRenderer,
-  getBezierPath,
+  getSmoothStepPath,
   type EdgeProps,
 } from "@xyflow/react";
 import { formatEdgeLabel } from "../flow/edgeLabels";
 import type { SkillFlowEdge } from "../types/project";
 
 export function SemanticEdge(props: EdgeProps<SkillFlowEdge>) {
-  const [edgePath, labelX, labelY] = getBezierPath(props);
+  const isBackEdge = props.sourceX > props.targetX;
+  const offset = isBackEdge ? 56 : 24;
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
+    ...props,
+    borderRadius: 18,
+    offset,
+  });
 
   return (
     <>

@@ -78,6 +78,23 @@ export interface TemplateSection {
   enabled: boolean;
 }
 
+export interface TemplateField {
+  id: string;
+  name: string;
+  key: string;
+  value: string;
+}
+
+export interface ProjectTemplate {
+  id: string;
+  name: string;
+  description: string;
+  templateMode: TemplateMode;
+  templateSections: TemplateSection[];
+  advancedTemplate: string;
+  customFields: TemplateField[];
+}
+
 export interface SkillNodeData extends Record<string, unknown> {
   label: string;
   nodeType: NodeKind;
@@ -104,6 +121,11 @@ export interface SkillNodeData extends Record<string, unknown> {
   manualMarkdown: string;
   aiMarkdown: string;
   editMode: EditMode;
+  templateId: string;
+  templateMode: TemplateMode;
+  templateSections: TemplateSection[];
+  advancedTemplate: string;
+  customFields: TemplateField[];
 }
 
 export interface WorkflowEdgeData extends Record<string, unknown> {
@@ -138,6 +160,7 @@ export interface ProjectState {
   workflow: WorkflowData;
   rules: RuleBlock[];
   resources: NodeResource[];
+  templates: ProjectTemplate[];
   settings: ProjectSettings;
 }
 
@@ -145,9 +168,6 @@ export interface ProjectSettings {
   theme: "system" | "light" | "dark";
   autoLint: boolean;
   autoGenerateOnSave: boolean;
-  templateMode: TemplateMode;
-  templateSections: TemplateSection[];
-  advancedTemplate: string;
 }
 
 export interface CreateProjectPayload {
@@ -163,6 +183,7 @@ export interface SaveProjectPayload {
   workflow: WorkflowData;
   rules: RuleBlock[];
   resources: NodeResource[];
+  templates: ProjectTemplate[];
   settings: ProjectSettings;
 }
 
@@ -182,13 +203,27 @@ export interface LintReport {
   generatedAt: string;
 }
 
+export interface GeneratedFile {
+  path: string;
+  content: string;
+}
+
+export interface WriteGeneratedFilesPayload {
+  projectRoot: string;
+  projectState: ProjectState;
+  files: GeneratedFile[];
+}
+
+export interface RecentProject {
+  projectRoot: string;
+  name: string;
+  lastOpenedAt: string;
+}
+
 export const defaultSettings: ProjectSettings = {
   theme: "system",
   autoLint: true,
   autoGenerateOnSave: false,
-  templateMode: "simple",
-  templateSections: createDefaultTemplateSections(),
-  advancedTemplate: "",
 };
 
 export function createDefaultTemplateSections(): TemplateSection[] {
@@ -220,6 +255,27 @@ export function createNodeResource(kind: ResourceKind): NodeResource {
     path: "",
     resourceType: "",
     description: "",
+  };
+}
+
+export function createTemplateField(): TemplateField {
+  return {
+    id: `field-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    name: "自定义字段",
+    key: "customField",
+    value: "",
+  };
+}
+
+export function createProjectTemplate(name = "自定义模板"): ProjectTemplate {
+  return {
+    id: `template-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    name,
+    description: "",
+    templateMode: "simple",
+    templateSections: createDefaultTemplateSections(),
+    advancedTemplate: "",
+    customFields: [],
   };
 }
 
@@ -262,6 +318,11 @@ export function createDefaultSkillData(name = "新 Skill"): SkillNodeData {
     manualMarkdown: "",
     aiMarkdown: "",
     editMode: "structured",
+    templateId: "",
+    templateMode: "simple",
+    templateSections: createDefaultTemplateSections(),
+    advancedTemplate: "",
+    customFields: [],
   };
 }
 
@@ -291,6 +352,13 @@ export function normalizeSkillData(data: Partial<SkillNodeData>): SkillNodeData 
     manualMarkdown: data.manualMarkdown || "",
     aiMarkdown: data.aiMarkdown || "",
     editMode: data.editMode || "structured",
+    templateId: data.templateId || "",
+    templateMode: data.templateMode || "simple",
+    templateSections: data.templateSections?.length
+      ? data.templateSections
+      : createDefaultTemplateSections(),
+    advancedTemplate: data.advancedTemplate || "",
+    customFields: data.customFields || [],
   };
 }
 
@@ -300,11 +368,6 @@ export function normalizeProjectSettings(
   return {
     ...defaultSettings,
     ...settings,
-    templateSections:
-      settings?.templateSections?.length
-        ? settings.templateSections
-        : createDefaultTemplateSections(),
-    advancedTemplate: settings?.advancedTemplate || "",
   };
 }
 
@@ -312,6 +375,7 @@ export function normalizeProjectState(state: ProjectState): ProjectState {
   return {
     ...state,
     resources: state.resources || [],
+    templates: state.templates || [],
     settings: normalizeProjectSettings(state.settings),
     workflow: {
       nodes: state.workflow.nodes.map((node) => ({

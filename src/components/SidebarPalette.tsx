@@ -45,6 +45,19 @@ export function SidebarPalette({
   onImportResource,
 }: SidebarPaletteProps) {
   const [tab, setTab] = useState<"nodes" | "resources">("nodes");
+  const [query, setQuery] = useState("");
+  const [kindFilter, setKindFilter] = useState<ResourceKind | "all">("all");
+  const [resourcePage, setResourcePage] = useState(1);
+  const pageSize = 8;
+
+  const filteredResources = resources.filter((resource) => {
+    const matchesKind = kindFilter === "all" || resource.kind === kindFilter;
+    const text = `${resource.name} ${resource.path} ${resource.description} ${resource.resourceType}`.toLowerCase();
+    return matchesKind && text.includes(query.trim().toLowerCase());
+  });
+  const pageCount = Math.max(1, Math.ceil(filteredResources.length / pageSize));
+  const safePage = Math.min(resourcePage, pageCount);
+  const pagedResources = filteredResources.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const updateResource = (id: string, patch: Partial<NodeResource>) => {
     onUpdateResources(
@@ -97,8 +110,32 @@ export function SidebarPalette({
               </button>
             ))}
           </div>
-          {resources.length ? (
-            resources.map((resource) => (
+          <div className="resource-filters">
+            <input
+              placeholder="搜索名称、路径、说明"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setResourcePage(1);
+              }}
+            />
+            <select
+              value={kindFilter}
+              onChange={(event) => {
+                setKindFilter(event.target.value as ResourceKind | "all");
+                setResourcePage(1);
+              }}
+            >
+              <option value="all">全部类型</option>
+              {Object.entries(resourceLabels).map(([kind, label]) => (
+                <option key={kind} value={kind}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {filteredResources.length ? (
+            pagedResources.map((resource) => (
               <div className="resource-library-item" key={resource.id}>
                 <select
                   value={resource.kind}
@@ -141,6 +178,25 @@ export function SidebarPalette({
           ) : (
             <p className="empty-copy">还没有资源。添加资源后，可在节点“绑定资源”里选择。</p>
           )}
+          <div className="resource-pagination">
+            <button
+              type="button"
+              disabled={safePage <= 1}
+              onClick={() => setResourcePage((page) => Math.max(1, page - 1))}
+            >
+              上一页
+            </button>
+            <span>
+              {safePage} / {pageCount} · {filteredResources.length} 条
+            </span>
+            <button
+              type="button"
+              disabled={safePage >= pageCount}
+              onClick={() => setResourcePage((page) => Math.min(pageCount, page + 1))}
+            >
+              下一页
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => onUpdateResources([...resources, createNodeResource("reference")])}

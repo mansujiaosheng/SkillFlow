@@ -14,11 +14,9 @@ export function formatEdgeLabel(edge: Pick<SkillFlowEdge, "data">): string {
   const relationText = relationLabels[relation];
   const handoff = edge.data?.handoffData?.filter(Boolean).slice(0, 3).join("、");
   const description = edge.data?.description?.trim();
-  const required = edge.data?.required ? "强制" : "可选";
 
   return [
     relationText,
-    required,
     handoff || "未配置数据",
     description ? `说明：${description}` : "",
   ]

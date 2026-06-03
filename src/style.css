@@ -14,9 +14,9 @@
 
 body {
   margin: 0;
-  min-width: 1024px;
   min-height: 100vh;
   background: #121816;
+  overflow: hidden;
 }
 
 button,
@@ -75,6 +75,7 @@ textarea {
   display: flex;
   min-height: 100vh;
   padding: 48px;
+  position: relative;
 }
 
 .home-panel {
@@ -105,6 +106,7 @@ textarea {
   display: grid;
   grid-template-rows: 58px 1fr 30px;
   height: 100vh;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -114,6 +116,8 @@ textarea {
   border-bottom: 1px solid #33423e;
   display: flex;
   justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
   padding: 0 14px;
 }
 
@@ -139,13 +143,18 @@ textarea {
 
 .topbar nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .workspace {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 380px;
+  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr) minmax(300px, 380px);
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   background: #0f1413;
 }
 
@@ -154,6 +163,7 @@ textarea {
   background: #17201d;
   border-right: 1px solid #33423e;
   min-height: 0;
+  min-width: 0;
   overflow: auto;
   padding: 14px;
 }
@@ -238,6 +248,8 @@ textarea {
     #111715;
   background-size: 28px 28px;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .skill-node {
@@ -247,6 +259,7 @@ textarea {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.26);
   color: #172026;
   min-width: 230px;
+  max-width: 280px;
   padding: 12px;
   position: relative;
 }
@@ -299,6 +312,7 @@ textarea {
   pointer-events: all;
   position: absolute;
   white-space: nowrap;
+  z-index: 5;
 }
 
 .edge-label-selected {
@@ -358,9 +372,11 @@ textarea {
   align-items: center;
   display: flex !important;
   flex-direction: row;
+  min-width: 0;
 }
 
 .checkbox input {
+  flex: 0 0 auto;
   width: auto;
 }
 
@@ -427,6 +443,11 @@ textarea {
   gap: 10px;
 }
 
+.resource-filters {
+  display: grid;
+  gap: 8px;
+}
+
 .resource-kind-row {
   display: grid;
   gap: 6px;
@@ -439,7 +460,94 @@ textarea {
   border-radius: 8px;
   display: grid;
   gap: 8px;
+  min-width: 0;
   padding: 10px;
+}
+
+.resource-library-item input,
+.resource-library-item select,
+.resource-library-item textarea,
+.resource-editor input,
+.resource-editor select,
+.resource-editor textarea {
+  min-width: 0;
+}
+
+.resource-library-item button,
+.resource-kind-row button,
+.resource-pagination button,
+.palette-tabs button {
+  min-width: 0;
+  white-space: normal;
+}
+
+.resource-pagination {
+  align-items: center;
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(0, auto) 1fr minmax(0, auto);
+  min-width: 0;
+}
+
+.resource-pagination span {
+  color: #9ba8a2;
+  font-size: 12px;
+  text-align: center;
+  min-width: 0;
+}
+
+.recent-projects {
+  border-top: 1px solid rgba(231, 236, 232, 0.16);
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  max-width: 760px;
+  padding-top: 14px;
+}
+
+.recent-projects h2 {
+  font-size: 14px;
+  margin: 0;
+}
+
+.recent-project-item {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr auto;
+  justify-content: stretch;
+  text-align: left;
+  width: 100%;
+}
+
+.recent-project-item span,
+.recent-project-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-about {
+  align-items: flex-end;
+  bottom: 18px;
+  color: #9ba8a2;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 4px;
+  position: fixed;
+  right: 18px;
+}
+
+.home-about a,
+.modal-panel a {
+  color: #bfe3d6;
+}
+
+.recent-project-item small {
+  color: #9ba8a2;
+  font-size: 11px;
 }
 
 .empty-copy {
@@ -460,13 +568,50 @@ textarea {
   border: 1px solid #3b4b46;
   border-radius: 8px;
   display: flex;
+  gap: 8px;
   justify-content: space-between;
+  min-width: 0;
   padding: 8px;
+}
+
+.template-section-item .checkbox {
+  flex: 1;
+}
+
+.template-section-item .checkbox input[type="text"],
+.template-section-item .checkbox input:not([type]) {
+  min-width: 0;
 }
 
 .template-section-actions {
   display: flex;
   gap: 4px;
+}
+
+.template-actions {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+  margin: 10px 0 12px;
+}
+
+.template-actions button {
+  min-width: 0;
+  white-space: normal;
+}
+
+.template-edit-details {
+  border: 1px solid #33423e;
+  border-radius: 8px;
+  margin: 10px 0 12px;
+  padding: 10px;
+}
+
+.template-edit-details summary {
+  color: #f1f5f2;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .icon-button {
@@ -475,6 +620,85 @@ textarea {
 
 .markdown-box {
   min-height: 130px;
+}
+
+.custom-field-editor {
+  background: #202c29;
+  border: 1px solid #3b4b46;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.modal-backdrop {
+  align-items: center;
+  background: rgba(4, 7, 6, 0.62);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 100;
+}
+
+.modal-panel {
+  background: #17201d;
+  border: 1px solid #40514c;
+  border-radius: 12px;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.44);
+  color: #e7ece8;
+  max-height: min(760px, calc(100vh - 48px));
+  overflow: auto;
+  padding: 18px;
+  width: min(760px, calc(100vw - 48px));
+}
+
+.modal-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.modal-header h2 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.help-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.help-grid article {
+  background: #202c29;
+  border: 1px solid #33423e;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.help-grid p {
+  color: #aebbb5;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 6px 0 0;
+}
+
+.settings-panel {
+  width: min(460px, calc(100vw - 48px));
+}
+
+.settings-panel label {
+  color: #c4d0ca;
+  display: grid;
+  font-size: 13px;
+  font-weight: 650;
+  gap: 8px;
+  margin-bottom: 14px;
 }
 
 .preview-panel {
@@ -601,4 +825,13 @@ textarea {
 .react-flow__minimap {
   background: #17201d !important;
   border: 1px solid #33423e;
+}
+
+:root[data-theme="light"] {
+  color: #172026;
+  background: #eef3f0;
+}
+
+:root[data-theme="light"] body {
+  background: #eef3f0;
 }

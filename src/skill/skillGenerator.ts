@@ -1,6 +1,5 @@
 import type {
   NodeResource,
-  ProjectSettings,
   SkillFlowEdge,
   SkillFlowNode,
   SkillNodeData,
@@ -177,6 +176,12 @@ function placeholderValues(
   projectResources: NodeResource[] = [],
 ): Record<string, string> {
   const data = node.data;
+  const customFields = Object.fromEntries(
+    data.customFields
+      .filter((field) => field.key.trim())
+      .map((field) => [field.key.trim(), field.value]),
+  );
+
   return {
     name: data.name,
     description: data.description,
@@ -196,6 +201,7 @@ function placeholderValues(
     scripts: sectionContent("scripts", node, nodes, edges, projectResources),
     assets: sectionContent("assets", node, nodes, edges, projectResources),
     attachments: sectionContent("attachments", node, nodes, edges, projectResources),
+    ...customFields,
   };
 }
 
@@ -232,7 +238,7 @@ export function generateSkillMarkdown(
   node: SkillFlowNode,
   nodes: SkillFlowNode[],
   edges: SkillFlowEdge[],
-  settings?: ProjectSettings,
+  _settings?: unknown,
   projectResources: NodeResource[] = [],
 ): string {
   if (node.data.editMode === "manual" && node.data.manualMarkdown.trim()) {
@@ -246,10 +252,10 @@ export function generateSkillMarkdown(
   const frontmatter = `---\nname: ${data.name}\ndescription: "${yamlEscape(description)}"\n---`;
 
   const body =
-    settings?.templateMode === "advanced" && settings.advancedTemplate.trim()
-      ? renderAdvancedTemplate(settings.advancedTemplate, node, nodes, edges, projectResources)
-      : (settings?.templateSections?.length
-          ? settings.templateSections
+    data.templateMode === "advanced" && data.advancedTemplate.trim()
+      ? renderAdvancedTemplate(data.advancedTemplate, node, nodes, edges, projectResources)
+      : (data.templateSections?.length
+          ? data.templateSections
           : createDefaultTemplateSections()
         )
           .map((section) => renderSection(section, node, nodes, edges, projectResources))
@@ -267,7 +273,7 @@ export function generateSkillMarkdown(
 export function generateAllSkillMarkdown(
   nodes: SkillFlowNode[],
   edges: SkillFlowEdge[],
-  settings?: ProjectSettings,
+  settings?: unknown,
   projectResources: NodeResource[] = [],
 ): Record<string, string> {
   return Object.fromEntries(

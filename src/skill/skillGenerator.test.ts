@@ -7,6 +7,7 @@ import {
   normalizeProjectState,
 } from "../types/project";
 import { generateSkillMarkdown, resolveSkillFolders } from "./skillGenerator";
+import { generateWorkflowMarkdown } from "./workflowGenerator";
 
 describe("generateSkillMarkdown", () => {
   it("generates structured SKILL.md with edge handoff context", () => {
@@ -54,6 +55,9 @@ describe("generateSkillMarkdown", () => {
 
   it("renders node resources and advanced templates", () => {
     const node = createSkillNode("a", { x: 0, y: 0 }, "资源 Skill");
+    node.data.templateMode = "advanced";
+    node.data.templateSections = createDefaultTemplateSections();
+    node.data.advancedTemplate = "## 脚本\n\n{{scripts}}";
     node.data.scripts = [
       {
         id: "script-1",
@@ -65,14 +69,7 @@ describe("generateSkillMarkdown", () => {
       },
     ];
 
-    const markdown = generateSkillMarkdown(node, [node], [], {
-      theme: "system",
-      autoLint: true,
-      autoGenerateOnSave: false,
-      templateMode: "advanced",
-      templateSections: createDefaultTemplateSections(),
-      advancedTemplate: "## 脚本\n\n{{scripts}}",
-    });
+    const markdown = generateSkillMarkdown(node, [node], []);
 
     expect(markdown).toContain("检查脚本 (ps1)：scripts/check.ps1 - 辅助检查输入");
   });
@@ -118,5 +115,33 @@ describe("generateSkillMarkdown", () => {
 
     expect(normalized.resources).toEqual([]);
     expect(normalized.workflow.nodes[0].data.resourceRefs).toEqual([]);
+  });
+
+  it("renders note nodes and semantic edge details in workflow.md", () => {
+    const skill = createSkillNode("a", { x: 0, y: 0 }, "分析 Skill");
+    const note = createNodeFromTemplate("note", { x: 200, y: 0 });
+    note.data.description = "这里说明整体流程。";
+
+    const markdown = generateWorkflowMarkdown(
+      [skill, note],
+      [
+        {
+          id: "edge-a-note",
+          source: "a",
+          target: note.id,
+          data: {
+            ...createWorkflowEdgeData(),
+            relation: "review_by",
+            description: "人工复核",
+            handoffData: ["分析摘要"],
+            required: false,
+          },
+        },
+      ],
+    );
+
+    expect(markdown).toContain("备注 (画布备注 / 不生成 SKILL.md)");
+    expect(markdown).toContain("审查；可选；交接数据：分析摘要；说明：人工复核");
+    expect(markdown).toContain("画布标签：审查 · 分析摘要 · 说明：人工复核");
   });
 });

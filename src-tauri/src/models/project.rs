@@ -19,9 +19,6 @@ pub struct ProjectSettings {
     pub theme: String,
     pub auto_lint: bool,
     pub auto_generate_on_save: bool,
-    pub template_mode: Option<String>,
-    pub template_sections: Option<Vec<Value>>,
-    pub advanced_template: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -62,6 +59,7 @@ pub struct ProjectState {
     pub workflow: WorkflowData,
     pub rules: Vec<RuleBlock>,
     pub resources: Vec<NodeResource>,
+    pub templates: Vec<Value>,
     pub settings: ProjectSettings,
 }
 
@@ -81,6 +79,7 @@ pub struct LintIssue {
     pub level: String,
     pub message: String,
     pub node_id: Option<String>,
+    pub action: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -91,4 +90,27 @@ pub struct LintReport {
     pub warnings: Vec<LintIssue>,
     pub suggestions: Vec<LintIssue>,
     pub generated_at: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneratedFile {
+    pub path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteGeneratedFilesPayload {
+    pub project_root: String,
+    pub project_state: ProjectState,
+    pub files: Vec<GeneratedFile>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentProject {
+    pub project_root: String,
+    pub name: String,
+    pub last_opened_at: String,
 }
