@@ -1,0 +1,701 @@
+SkillFlow 需求说明文档
+1. 项目名称
+SkillFlow
+2. 项目定位
+SkillFlow 是一个本地桌面端的 Agent Skill 可视化创建、规范化生成与流程编排工具。
+它的核心目标不是运行 AI Agent，也不是做完整的工作流自动化平台，而是帮助用户通过 GUI 创建、管理、编排和生成标准化的 Skill 文件。
+用户可以在图形界面中创建项目、拖拽 Skill 节点、配置节点信息、添加规则块、用连线描述 Skill 之间的关系，最后自动生成并落地标准化的 SKILL.md、项目配置文件、流程文件和检查报告。
+3. 技术选型
+本项目采用以下技术栈：
+Tauri + React + React Flow + TypeScript + SQLite/JSON 文件
+具体说明：
+桌面框架：Tauri
+前端框架：React
+流程画布：React Flow
+开发语言：TypeScript
+本地存储：SQLite + JSON 文件
+样式方案：可使用 Tailwind CSS / shadcn/ui
+文件落地：通过 Tauri 后端写入本地文件系统
+AI 接口：预留 OpenAI / Claude / 本地模型接口
+4. 核心目标
+本项目要实现以下能力：
+1. 用户可以创建一个本地 Skill 项目。
+2. 用户可以选择项目保存位置，程序自动创建项目文件夹。
+3. 用户可以在空白大画布中拖拽 Skill 节点。
+4. 用户可以点击 Skill 节点，编辑技能名、描述、使用时机、输入、输出、执行流程等内容。
+5. 用户可以拖拽规则块到 Skill 节点中，例如 #require、#forbid、#check、#tool、#handoff。
+6. 用户可以创建多个 Skill 节点，并用流程线连接它们。
+7. 流程线可以描述 Skill 之间的关系，例如前置依赖、输出交接、审查关系、失败回退等。
+8. 用户可以手写 Skill 内容，也可以让 AI 根据节点信息和节点关系自动生成 Skill。
+9. 用户点击保存后，项目数据和生成结果必须自动落地到本地文件夹。
+10. 系统应支持后续添加 Skill 质量检查器，也就是 Linter。
+5. 非目标范围
+第一阶段不要实现以下能力：
+1. 不需要真正执行 Agent。
+2. 不需要执行用户生成的 Skill。
+3. 不需要运行 shell 命令。
+4. 不需要做完整工作流自动化。
+5. 不需要接入复杂的多 Agent 调度系统。
+6. 不需要做云端同步。
+7. 不需要做多人协作。
+第一阶段只做：
+项目创建
+节点拖拽
+节点编辑
+规则块配置
+流程线连接
+保存落地
+生成 SKILL.md
+6. 用户使用流程
+6.1 打开程序
+用户打开 SkillFlow 后，进入一个空白首页。
+首页提供以下操作：
+新建项目
+打开已有项目
+最近项目列表
+设置
+6.2 新建项目
+用户点击“新建项目”，弹出项目创建窗口。
+用户需要填写：
+项目名称
+项目描述
+项目保存位置
+目标平台
+目标平台可以包括：
+Claude Code
+OpenAI Codex
+Trae
+通用 Agent Skills
+用户选择一个本地目录后，程序自动创建项目文件夹。
+示例：
+D:\AI-Skills\Android-CTF-Skills
+自动生成目录结构：
+Android-CTF-Skills/
+├── .skillflow/
+│   ├── project.json
+│   ├── workflow.json
+│   ├── nodes.json
+│   ├── rules.json
+│   └── settings.json
+├── skills/
+├── references/
+├── assets/
+├── exports/
+└── README.md
+其中：
+.skillflow/     保存 SkillFlow 自己使用的源数据
+skills/         保存最终生成的 Skill 目录
+references/     保存参考资料
+assets/         保存图片、模板、示例文件等
+exports/        保存导出的 zip 或其他格式
+README.md       项目说明
+6.3 进入主界面
+项目创建完成后，进入主编辑界面。
+界面布局如下：
+┌─────────────────────────────────────────────────────────────┐
+│ 顶部菜单：新建 / 打开 / 保存 / 生成 / 检查 / 导出 / 设置       │
+├───────────────┬───────────────────────────────┬─────────────┤
+│ 左侧组件库     │ 中间主画布                     │ 右侧属性面板 │
+│               │                               │             │
+│ Skill 节点     │  [Skill A] → [Skill B]          │ 当前节点配置 │
+│ Rule 块        │       ↓                       │ 规则块配置   │
+│ Check 节点     │  [Review Skill]                │ AI生成按钮   │
+│ Export 节点    │                               │ Lint结果     │
+├───────────────┴───────────────────────────────┴─────────────┤
+│ 底部：日志 / 生成结果 / 错误提示 / 文件落地状态                 │
+└─────────────────────────────────────────────────────────────┘
+7. 左侧组件库设计
+左侧组件库提供可拖拽组件。
+第一版至少包含：
+Skill 节点
+全局规则节点
+检查节点
+导出节点
+备注节点
+规则块包括：
+#require
+#forbid
+#input
+#output
+#step
+#check
+#tool
+#guard
+#fallback
+#handoff
+#ref
+规则块说明：
+#require   强制要求
+#forbid    禁止行为
+#input     输入定义
+#output    输出定义
+#step      执行步骤
+#check     完成检查
+#tool      可用工具
+#guard     安全边界
+#fallback  失败处理
+#handoff   向下游 Skill 交接的数据
+#ref       参考资料
+8. 中间画布设计
+中间画布使用 React Flow 实现。
+用户可以：
+1. 从左侧拖拽 Skill 节点到画布。
+2. 移动节点位置。
+3. 删除节点。
+4. 复制节点。
+5. 多选节点。
+6. 用线连接节点。
+7. 点击节点后在右侧编辑属性。
+8. 点击线后编辑线的关系类型。
+画布上的每个 Skill 节点代表一个独立的 Skill。
+例如：
+[00 全局规则] → [需求分析] → [代码修改] → [测试验证] → [文档更新] → [最终审查]
+或者：
+[安卓静态分析] → [Frida 动态调试] → [Flag 获取] → [WP 生成] → [质量审查]
+9. Skill 节点字段设计
+每个 Skill 节点应包含以下字段：
+节点 ID
+节点类型
+节点坐标
+技能名
+技能目录名
+技能描述
+什么时候使用
+不适用场景
+输入
+输出
+可用工具
+执行步骤
+必须遵守
+禁止行为
+完成标准
+失败处理
+参考资料
+规则块列表
+手写 Markdown
+AI 生成 Markdown
+编辑模式
+编辑模式包括：
+structured：结构化模式，由字段和规则块生成 SKILL.md
+manual：手写模式，完全使用用户写的 Markdown
+hybrid：混合模式，AI 生成后用户可以局部修改
+10. 流程线设计
+节点之间的线不能只是普通连线，必须带有语义。
+第一版支持以下关系类型：
+before        A 必须在 B 之前执行
+depends_on    B 依赖 A 的输出
+handoff       A 的输出交接给 B
+review_by     A 的结果由 B 检查
+fallback_to   A 失败后转到 B
+parallel_with A 和 B 可以并行
+每条线应支持配置：
+关系类型
+说明
+传递数据
+是否强制
+备注
+示例：
+安卓静态分析 → Frida 动态调试
+关系为：
+handoff
+传递数据：
+关键类名
+关键函数名
+疑似校验逻辑
+APK 包名
+Hook 目标
+11. 右侧属性面板设计
+用户点击不同对象时，右侧显示不同配置。
+11.1 点击 Skill 节点
+右侧显示：
+技能名
+目录名
+描述
+什么时候使用
+不适用场景
+输入
+输出
+工具
+执行步骤
+规则块
+完成标准
+失败处理
+AI 生成按钮
+Markdown 预览
+按钮包括：
+AI 补全当前节点
+AI 重写当前 Skill
+AI 优化 description
+生成 SKILL.md
+检查当前 Skill
+保存当前 Skill
+11.2 点击规则块
+右侧显示：
+规则类型
+规则内容
+严重程度
+是否必须
+备注
+11.3 点击流程线
+右侧显示：
+关系类型
+上游节点
+下游节点
+交接数据
+说明
+是否强制
+12. 数据保存设计
+保存时必须同时保存两类数据：
+1. GUI 可再次编辑的源数据
+2. Agent 可直接使用的生成结果
+源数据保存在：
+.skillflow/
+生成结果保存在：
+skills/
+保存时生成：
+.skillflow/project.json
+.skillflow/workflow.json
+.skillflow/nodes.json
+.skillflow/rules.json
+.skillflow/settings.json
+skills/*/SKILL.md
+workflow.md
+lint-report.json
+README.md
+13. project.json 示例
+{
+  "schemaVersion": "0.1.0",
+  "projectId": "android-ctf-skills",
+  "name": "Android CTF Skills",
+  "description": "用于 Android CTF 逆向分析、动态调试和 WP 生成。",
+  "targetPlatforms": ["claude-code", "codex", "trae", "generic-agent-skills"],
+  "createdAt": "2026-06-03T00:00:00Z",
+  "updatedAt": "2026-06-03T00:00:00Z"
+}
+14. workflow.json 示例
+{
+  "nodes": [
+    {
+      "id": "android_static",
+      "type": "skill",
+      "position": {
+        "x": 120,
+        "y": 160
+      },
+      "data": {
+        "name": "安卓静态分析",
+        "folder": "android-static-analysis",
+        "description": "分析 APK、Manifest、字符串、关键类和加固信息。",
+        "whenToUse": [
+          "用户上传 APK",
+          "用户要求分析 Android 逆向题"
+        ],
+        "inputs": [
+          "APK 文件",
+          "AndroidManifest.xml",
+          "jadx 反编译结果"
+        ],
+        "outputs": [
+          "关键类",
+          "关键函数",
+          "后续 hook 目标"
+        ],
+        "rules": [
+          {
+            "type": "require",
+            "content": "必须优先分析 Manifest、字符串和关键 Activity。"
+          },
+          {
+            "type": "forbid",
+            "content": "禁止在没有依据时直接给出 flag。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "frida_debug",
+      "type": "skill",
+      "position": {
+        "x": 480,
+        "y": 160
+      },
+      "data": {
+        "name": "Frida 动态调试",
+        "folder": "frida-dynamic-debug",
+        "description": "根据静态分析结果编写 Frida Hook 脚本并验证关键函数。",
+        "whenToUse": [
+          "已经定位关键类和关键函数",
+          "需要动态验证 Java 层或 Native 层逻辑"
+        ],
+        "inputs": [
+          "关键类名",
+          "关键函数名",
+          "APK 包名"
+        ],
+        "outputs": [
+          "Frida Hook 脚本",
+          "运行命令",
+          "动态验证结果"
+        ],
+        "rules": [
+          {
+            "type": "require",
+            "content": "必须给出可运行的 frida 命令。"
+          },
+          {
+            "type": "forbid",
+            "content": "禁止在未验证函数签名时编造 Hook 参数。"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge_static_to_frida",
+      "source": "android_static",
+      "target": "frida_debug",
+      "relation": "handoff",
+      "handoffData": [
+        "关键类",
+        "关键函数",
+        "Hook 目标"
+      ]
+    }
+  ]
+}
+15. SKILL.md 生成模板
+所有 Skill 默认使用统一模板生成。
+---
+name: {{skill_name}}
+description: {{description_with_trigger}}
+---
+
+# {{skill_name}}
+
+## 使用时机
+
+{{when_to_use}}
+
+## 不适用场景
+
+{{when_not_to_use}}
+
+## 输入
+
+{{inputs}}
+
+## 输出
+
+{{outputs}}
+
+## 上游依赖
+
+{{upstream_dependencies}}
+
+## 下游交接
+
+{{downstream_handoff}}
+
+## 必须遵守
+
+{{require_rules}}
+
+## 禁止行为
+
+{{forbid_rules}}
+
+## 可用工具
+
+{{tools}}
+
+## 执行流程
+
+{{steps}}
+
+## 完成标准
+
+{{checks}}
+
+## 失败处理
+
+{{fallbacks}}
+
+## 参考资料
+
+{{references}}
+16. AI 生成功能设计
+AI 生成不能直接基于空白画布自由发挥。
+正确流程是：
+GUI 结构化数据
+  ↓
+转换为 JSON 上下文
+  ↓
+Prompt Builder 生成提示词
+  ↓
+AI 生成 SKILL.md
+  ↓
+Skill Linter 检查
+  ↓
+用户确认或修改
+  ↓
+保存落地
+AI 生成按钮分为：
+AI 补全当前节点
+AI 重写当前 Skill
+AI 优化 description 触发条件
+AI 根据流程生成全部 Skill
+AI 检查规则冲突
+AI 生成 workflow.md
+16.1 单个 Skill 生成上下文示例
+{
+  "project": {
+    "name": "Android CTF Skills",
+    "description": "用于 Android CTF 逆向分析和 WP 生成"
+  },
+  "currentNode": {
+    "name": "Frida 动态调试",
+    "description": "用于根据静态分析结果编写 Frida Hook 脚本并验证关键函数。",
+    "whenToUse": [
+      "上游静态分析已经定位关键类和关键函数",
+      "用户需要动态验证 Java 层或 Native 层逻辑"
+    ],
+    "inputs": [
+      "关键类名",
+      "关键函数名",
+      "疑似校验逻辑",
+      "APK 包名"
+    ],
+    "outputs": [
+      "Frida Hook 脚本",
+      "运行命令",
+      "动态验证结果",
+      "后续 WP 可用描述"
+    ],
+    "rules": [
+      {
+        "type": "require",
+        "content": "必须给出可运行的 frida 命令。"
+      },
+      {
+        "type": "forbid",
+        "content": "禁止在未验证函数签名时编造 hook 参数。"
+      }
+    ]
+  },
+  "incoming": [
+    {
+      "from": "安卓静态分析",
+      "relation": "handoff",
+      "handoffData": [
+        "关键类名",
+        "关键函数名",
+        "疑似校验逻辑"
+      ]
+    }
+  ],
+  "outgoing": [
+    {
+      "to": "WP 生成",
+      "relation": "handoff",
+      "handoffData": [
+        "hook 脚本",
+        "验证过程",
+        "关键输出"
+      ]
+    }
+  ]
+}
+17. Linter 质量检查设计
+Linter 是本项目的重要功能。它用于检查生成的 Skill 是否规范、完整、强约束、无明显冲突。
+第一版检查规则：
+1. 是否存在 YAML frontmatter。
+2. 是否存在 name。
+3. 是否存在 description。
+4. description 是否包含明确触发条件。
+5. 是否包含使用时机。
+6. 是否包含输入。
+7. 是否包含输出。
+8. 是否包含必须遵守。
+9. 是否包含禁止行为。
+10. 是否包含执行流程。
+11. 是否包含完成标准。
+12. 是否出现弱约束词，例如：可以、建议、尽量、最好。
+13. 是否出现危险行为，例如：自动删除文件、自动发送敏感信息、执行未知脚本。
+14. 是否和全局规则冲突。
+15. 是否存在孤立节点。
+16. 是否存在循环依赖。
+17. 是否存在没有下游交接说明的关键节点。
+Linter 输出示例：
+质量评分：86 / 100
+
+严重问题：
+- 缺少禁止行为
+- 没有完成标准
+
+警告：
+- 出现弱约束词：“建议”
+- 节点没有设置下游交接内容
+
+建议：
+- 增加 #check 规则
+- 增加 #forbid 规则
+18. 第一版 MVP 范围
+第一版只实现最小可用闭环。
+V0.1：项目创建与文件落地
+必须实现：
+新建项目
+选择保存文件夹
+创建项目目录结构
+生成 .skillflow/project.json
+生成 README.md
+打开已有项目
+保存项目
+V0.2：React Flow 画布
+必须实现：
+左侧组件库
+拖拽 Skill 节点到画布
+节点移动
+节点删除
+节点连线
+保存 workflow.json
+重新打开项目后恢复画布
+V0.3：右侧属性面板
+必须实现：
+点击节点后编辑技能名
+编辑描述
+编辑使用时机
+编辑输入
+编辑输出
+编辑执行步骤
+编辑必须遵守
+编辑禁止行为
+编辑完成标准
+V0.4：规则块系统
+必须实现：
+#require
+#forbid
+#check
+#tool
+#handoff
+规则块可以先不做复杂拖拽，第一版可以用“添加规则块”按钮实现。
+V0.5：SKILL.md 生成
+必须实现：
+根据结构化字段生成 SKILL.md
+根据节点关系生成上游依赖和下游交接
+保存到 skills/<skill-folder>/SKILL.md
+V0.6：基础 Linter
+必须实现：
+检查缺失字段
+检查弱约束词
+检查孤立节点
+检查循环依赖
+生成 lint-report.json
+19. 第二阶段功能
+第二阶段再实现：
+AI 补全当前节点
+AI 生成全部 Skill
+AI 检查规则冲突
+AI 生成 workflow.md
+导出 zip
+导出 Claude Code / Codex / Trae 目录格式
+模板市场
+内置模板库
+SQLite 持久化
+版本管理
+20. 推荐项目目录结构
+skillflow/
+├── src-tauri/
+│   ├── src/
+│   │   ├── main.rs
+│   │   ├── commands/
+│   │   │   ├── project.rs
+│   │   │   ├── fs.rs
+│   │   │   ├── generate.rs
+│   │   │   └── lint.rs
+│   │   └── models/
+│   │       ├── project.rs
+│   │       ├── workflow.rs
+│   │       └── skill.rs
+│   └── tauri.conf.json
+├── src/
+│   ├── app/
+│   ├── components/
+│   │   ├── ProjectCreateDialog.tsx
+│   │   ├── SidebarPalette.tsx
+│   │   ├── Canvas.tsx
+│   │   ├── SkillNode.tsx
+│   │   ├── RuleBlock.tsx
+│   │   ├── InspectorPanel.tsx
+│   │   └── LintPanel.tsx
+│   ├── flow/
+│   │   ├── nodeTypes.ts
+│   │   ├── edgeTypes.ts
+│   │   └── graphUtils.ts
+│   ├── skill/
+│   │   ├── skillSchema.ts
+│   │   ├── skillTemplate.ts
+│   │   ├── skillGenerator.ts
+│   │   └── skillLinter.ts
+│   ├── ai/
+│   │   ├── promptBuilder.ts
+│   │   └── aiClient.ts
+│   └── main.tsx
+├── examples/
+│   └── android-ctf-skills/
+└── README.md
+21. 核心架构原则
+本项目必须遵循以下原则：
+GUI 是主控。
+JSON 是事实源。
+AI 是生成器。
+Linter 是质量门。
+SKILL.md 是最终产物。
+也就是说：
+用户控制结构，AI 补充内容。
+用户控制规则，AI 优化表达。
+用户控制流程，AI 生成落地文件。
+不能让 AI 完全自由生成项目结构，也不能让 AI 覆盖用户明确写下的规则。
+22. 最终交付效果
+用户完成流程图后，点击“生成全部 Skill”，项目应落地为：
+MySkillProject/
+├── .skillflow/
+│   ├── project.json
+│   ├── workflow.json
+│   ├── nodes.json
+│   ├── rules.json
+│   └── lint-report.json
+├── skills/
+│   ├── 00-global-rules/
+│   │   └── SKILL.md
+│   ├── 01-requirement-analysis/
+│   │   └── SKILL.md
+│   ├── 02-code-implementation/
+│   │   └── SKILL.md
+│   ├── 03-test-verification/
+│   │   └── SKILL.md
+│   ├── 04-doc-update/
+│   │   └── SKILL.md
+│   └── 05-final-review/
+│       └── SKILL.md
+├── workflow.md
+├── README.md
+└── exports/
+23. 给开发 AI 的任务要求
+请根据本需求文档，生成完整开发流程，包括：
+1. 项目初始化步骤
+2. 技术栈安装命令
+3. Tauri + React + TypeScript 项目结构
+4. React Flow 画布实现方案
+5. 项目创建与文件夹落地方案
+6. Skill 节点数据结构
+7. 规则块数据结构
+8. 流程线数据结构
+9. SKILL.md 生成器设计
+10. Linter 检查器设计
+11. 前端页面拆分
+12. Tauri 后端命令设计
+13. MVP 开发顺序
+14. 每个阶段的验收标准
+15. 后续 AI 生成功能扩展方案
+优先实现 MVP，不要一开始实现复杂云端、插件市场、多用户协作或完整 Agent 执行能力。
