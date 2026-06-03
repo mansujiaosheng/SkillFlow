@@ -1,6 +1,6 @@
 :root {
-  color: #172026;
-  background: #f4f6f3;
+  color: #e7ece8;
+  background: #121816;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -16,6 +16,7 @@ body {
   margin: 0;
   min-width: 1024px;
   min-height: 100vh;
+  background: #121816;
 }
 
 button,
@@ -27,10 +28,10 @@ textarea {
 
 button {
   align-items: center;
-  border: 1px solid #c9d3c7;
+  border: 1px solid #3b4b46;
   border-radius: 6px;
-  background: #ffffff;
-  color: #172026;
+  background: #26322f;
+  color: #e7ece8;
   cursor: pointer;
   display: inline-flex;
   gap: 6px;
@@ -40,8 +41,9 @@ button {
 }
 
 button:hover:not(:disabled) {
-  border-color: #48736f;
-  color: #174b47;
+  background: #31413d;
+  border-color: #8fb7aa;
+  color: #ffffff;
 }
 
 button:disabled {
@@ -52,9 +54,10 @@ button:disabled {
 input,
 select,
 textarea {
-  border: 1px solid #c9d3c7;
+  background: #111715;
+  border: 1px solid #40514c;
   border-radius: 6px;
-  color: #172026;
+  color: #e7ece8;
   padding: 8px;
   width: 100%;
 }
@@ -67,9 +70,8 @@ textarea {
 .home {
   align-items: center;
   background:
-    linear-gradient(135deg, rgba(72, 115, 111, 0.16), transparent 32%),
-    linear-gradient(315deg, rgba(175, 76, 55, 0.13), transparent 34%),
-    #f4f6f3;
+    radial-gradient(circle at 16% 18%, rgba(143, 183, 170, 0.22), transparent 28%),
+    linear-gradient(135deg, #18221f 0%, #101514 58%, #211c19 100%);
   display: flex;
   min-height: 100vh;
   padding: 48px;
@@ -87,7 +89,7 @@ textarea {
 }
 
 .home-panel p {
-  color: #5b6662;
+  color: #aebbb5;
   font-size: 18px;
   line-height: 1.6;
   margin: 0 0 28px;
@@ -108,8 +110,8 @@ textarea {
 
 .topbar {
   align-items: center;
-  background: #ffffff;
-  border-bottom: 1px solid #d8dfd6;
+  background: #18211f;
+  border-bottom: 1px solid #33423e;
   display: flex;
   justify-content: space-between;
   padding: 0 14px;
@@ -127,7 +129,7 @@ textarea {
 }
 
 .topbar span {
-  color: #68736f;
+  color: #9ba8a2;
   font-size: 12px;
   max-width: 540px;
   overflow: hidden;
@@ -144,24 +146,25 @@ textarea {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) 360px;
   min-height: 0;
+  background: #0f1413;
 }
 
 .palette,
 .inspector {
-  background: #fbfcfa;
-  border-right: 1px solid #d8dfd6;
+  background: #17201d;
+  border-right: 1px solid #33423e;
   min-height: 0;
   overflow: auto;
   padding: 14px;
 }
 
 .inspector {
-  border-left: 1px solid #d8dfd6;
+  border-left: 1px solid #33423e;
   border-right: 0;
 }
 
 .panel-title {
-  color: #172026;
+  color: #f1f5f2;
   font-size: 13px;
   font-weight: 700;
   margin-bottom: 12px;
@@ -178,8 +181,8 @@ textarea {
 
 .palette-item {
   align-items: center;
-  background: #ffffff;
-  border: 1px solid #d8dfd6;
+  background: #202c29;
+  border: 1px solid #3b4b46;
   border-radius: 6px;
   cursor: grab;
   display: flex;
@@ -189,7 +192,8 @@ textarea {
 }
 
 .palette-item:hover {
-  border-color: #48736f;
+  background: #2a3834;
+  border-color: #8fb7aa;
 }
 
 .rule-tags {
@@ -199,23 +203,29 @@ textarea {
 }
 
 .rule-tags span {
-  background: #e8efea;
-  border: 1px solid #d1ddd4;
+  background: #24312e;
+  border: 1px solid #3f544e;
   border-radius: 6px;
-  color: #28534f;
+  color: #bfe3d6;
   font-size: 12px;
   padding: 5px 7px;
 }
 
 .canvas {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    #111715;
+  background-size: 28px 28px;
   min-height: 0;
 }
 
 .skill-node {
-  background: #ffffff;
-  border: 1px solid #bfcdc7;
+  background: #f8fbf8;
+  border: 1px solid #8fb7aa;
   border-radius: 8px;
-  box-shadow: 0 10px 24px rgba(23, 32, 38, 0.08);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.26);
+  color: #172026;
   min-width: 230px;
   padding: 12px;
 }
@@ -248,7 +258,7 @@ textarea {
 }
 
 .inspector label {
-  color: #44504c;
+  color: #c4d0ca;
   display: grid;
   font-size: 12px;
   font-weight: 650;
@@ -264,7 +274,7 @@ textarea {
 }
 
 .inspector.empty p {
-  color: #68736f;
+  color: #9ba8a2;
   line-height: 1.5;
 }
 
@@ -288,8 +298,8 @@ textarea {
 }
 
 .rule-editor {
-  background: #ffffff;
-  border: 1px solid #d8dfd6;
+  background: #202c29;
+  border: 1px solid #3b4b46;
   border-radius: 8px;
   display: grid;
   gap: 8px;
@@ -331,7 +341,7 @@ textarea {
 
 .status-bar {
   align-items: center;
-  background: #172026;
+  background: #0b100f;
   color: #f6f8f5;
   display: flex;
   font-size: 12px;

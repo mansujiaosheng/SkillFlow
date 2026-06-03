@@ -64,7 +64,9 @@ export function FlowCanvas({
   const onDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      const type = event.dataTransfer.getData("application/skillflow");
+      const type =
+        event.dataTransfer.getData("application/skillflow") ||
+        event.dataTransfer.getData("text/plain");
       if (!type) return;
 
       const position = reactFlow.screenToFlowPosition({
@@ -80,7 +82,7 @@ export function FlowCanvas({
   );
 
   return (
-    <main className="canvas" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
+    <main className="canvas">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -89,6 +91,11 @@ export function FlowCanvas({
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onSelectionChange={onSelectionChange}
+        onDragOver={(event) => {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={onDrop}
         fitView
         deleteKeyCode={["Backspace", "Delete"]}
         multiSelectionKeyCode={["Shift"]}

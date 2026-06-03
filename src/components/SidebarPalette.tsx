@@ -14,7 +14,11 @@ const paletteItems = [
   { type: "note", label: "备注节点", icon: MessageSquareText },
 ];
 
-export function SidebarPalette() {
+interface SidebarPaletteProps {
+  onAddNode: (type: string) => void;
+}
+
+export function SidebarPalette({ onAddNode }: SidebarPaletteProps) {
   return (
     <aside className="palette">
       <div className="panel-title">组件库</div>
@@ -26,10 +30,13 @@ export function SidebarPalette() {
               className="palette-item"
               draggable
               key={item.type}
+              onClick={() => onAddNode(item.type)}
               onDragStart={(event) => {
                 event.dataTransfer.setData("application/skillflow", item.type);
+                event.dataTransfer.setData("text/plain", item.type);
                 event.dataTransfer.effectAllowed = "move";
               }}
+              title="拖到画布，或单击添加到画布"
             >
               <Icon size={18} />
               <span>{item.label}</span>
