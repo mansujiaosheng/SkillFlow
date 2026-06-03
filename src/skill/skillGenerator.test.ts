@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createSkillNode, createWorkflowEdgeData } from "../types/project";
-import { generateSkillMarkdown } from "./skillGenerator";
+import { createDefaultTemplateSections, createSkillNode, createWorkflowEdgeData } from "../types/project";
+import { generateSkillMarkdown, resolveSkillFolders } from "./skillGenerator";
 
 describe("generateSkillMarkdown", () => {
   it("generates structured SKILL.md with edge handoff context", () => {
@@ -35,5 +35,39 @@ describe("generateSkillMarkdown", () => {
     node.data.manualMarkdown = "# Manual";
 
     expect(generateSkillMarkdown(node, [node], [])).toBe("# Manual\n");
+  });
+
+  it("deduplicates folders for nodes with the same folder", () => {
+    const first = createSkillNode("a", { x: 0, y: 0 }, "Skill");
+    const second = createSkillNode("b", { x: 0, y: 0 }, "Skill");
+    first.data.folder = "same";
+    second.data.folder = "same";
+
+    expect(resolveSkillFolders([first, second])).toEqual({ a: "same", b: "same-2" });
+  });
+
+  it("renders node resources and advanced templates", () => {
+    const node = createSkillNode("a", { x: 0, y: 0 }, "资源 Skill");
+    node.data.scripts = [
+      {
+        id: "script-1",
+        kind: "script",
+        name: "检查脚本",
+        path: "scripts/check.ps1",
+        resourceType: "ps1",
+        description: "辅助检查输入",
+      },
+    ];
+
+    const markdown = generateSkillMarkdown(node, [node], [], {
+      theme: "system",
+      autoLint: true,
+      autoGenerateOnSave: false,
+      templateMode: "advanced",
+      templateSections: createDefaultTemplateSections(),
+      advancedTemplate: "## 脚本\n\n{{scripts}}",
+    });
+
+    expect(markdown).toContain("检查脚本 (ps1)：scripts/check.ps1 - 辅助检查输入");
   });
 });

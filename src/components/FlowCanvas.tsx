@@ -96,6 +96,11 @@ export function FlowCanvas({
           event.dataTransfer.dropEffect = "move";
         }}
         onDrop={onDrop}
+        defaultEdgeOptions={{
+          animated: true,
+          style: { stroke: "#8fb7aa", strokeWidth: 2 },
+        }}
+        connectionLineStyle={{ stroke: "#d8f3e8", strokeWidth: 2 }}
         fitView
         deleteKeyCode={["Backspace", "Delete"]}
         multiSelectionKeyCode={["Shift"]}

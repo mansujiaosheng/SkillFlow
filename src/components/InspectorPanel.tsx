@@ -1,43 +1,66 @@
-import { Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import type {
   EdgeRelation,
+  EditMode,
+  NodeResource,
+  ProjectSettings,
+  ResourceKind,
   RuleBlock,
   RuleType,
   SkillFlowEdge,
   SkillFlowNode,
   SkillNodeData,
+  TemplateSection,
 } from "../types/project";
+import { createNodeResource } from "../types/project";
 
-const arrayFields: Array<[keyof SkillNodeData, string]> = [
+const primaryFields: Array<[keyof SkillNodeData, string]> = [
   ["whenToUse", "使用时机"],
-  ["whenNotToUse", "不适用场景"],
   ["inputs", "输入"],
   ["outputs", "输出"],
-  ["tools", "可用工具"],
   ["steps", "执行流程"],
   ["requires", "必须遵守"],
   ["forbids", "禁止行为"],
   ["checks", "完成标准"],
+];
+
+const extraFields: Array<[keyof SkillNodeData, string]> = [
+  ["whenNotToUse", "不适用场景"],
+  ["tools", "可用工具"],
   ["fallbacks", "失败处理"],
   ["references", "参考资料"],
 ];
 
-const relationOptions: EdgeRelation[] = [
-  "before",
-  "depends_on",
-  "handoff",
-  "review_by",
-  "fallback_to",
-  "parallel_with",
-];
+const relationLabels: Record<EdgeRelation, string> = {
+  before: "前置",
+  depends_on: "依赖",
+  handoff: "交接",
+  review_by: "审查",
+  fallback_to: "失败回退",
+  parallel_with: "并行",
+};
+
+const editModeLabels: Record<EditMode, string> = {
+  structured: "结构化生成",
+  manual: "手写 Markdown",
+  hybrid: "混合编辑",
+};
+
+const editModeHelp: Record<EditMode, string> = {
+  structured: "按字段和项目模板生成 SKILL.md。",
+  manual: "完全使用下面手写内容，不读取结构化字段。",
+  hybrid: "先生成结构化内容，再追加手写补充。",
+};
 
 const ruleTypes: RuleType[] = ["require", "forbid", "check", "tool", "handoff"];
 
 interface InspectorPanelProps {
   selectedNode?: SkillFlowNode;
   selectedEdge?: SkillFlowEdge;
+  settings: ProjectSettings;
   onUpdateNode: (node: SkillFlowNode) => void;
   onUpdateEdge: (edge: SkillFlowEdge) => void;
+  onUpdateSettings: (settings: ProjectSettings) => void;
   onGenerateNode: (nodeId: string) => void;
   onLintNode: (nodeId: string) => void;
 }
@@ -53,14 +76,110 @@ function textToList(value: string): string[] {
     .filter(Boolean);
 }
 
+function Section({
+  title,
+  children,
+  defaultOpen = false,
+}: {
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details className="inspector-section" open={defaultOpen}>
+      <summary>{title}</summary>
+      <div className="inspector-section-body">{children}</div>
+    </details>
+  );
+}
+
+function ResourceEditor({
+  title,
+  kind,
+  resources,
+  onChange,
+}: {
+  title: string;
+  kind: ResourceKind;
+  resources: NodeResource[];
+  onChange: (resources: NodeResource[]) => void;
+}) {
+  const updateResource = (id: string, patch: Partial<NodeResource>) => {
+    onChange(resources.map((resource) => (resource.id === id ? { ...resource, ...patch } : resource)));
+  };
+
+  return (
+    <div className="resource-group">
+      <div className="rule-header">
+        <span>{title}</span>
+        <button type="button" onClick={() => onChange([...resources, createNodeResource(kind)])}>
+          <Plus size={16} />
+          添加
+        </button>
+      </div>
+      {resources.map((resource) => (
+        <div className="resource-editor" key={resource.id}>
+          <input
+            placeholder="名称"
+            value={resource.name}
+            onChange={(event) => updateResource(resource.id, { name: event.target.value })}
+          />
+          <input
+            placeholder="相对路径或 URL"
+            value={resource.path}
+            onChange={(event) => updateResource(resource.id, { path: event.target.value })}
+          />
+          <input
+            placeholder="类型，例如 ps1 / md / image"
+            value={resource.resourceType}
+            onChange={(event) => updateResource(resource.id, { resourceType: event.target.value })}
+          />
+          <textarea
+            placeholder="用途说明"
+            value={resource.description}
+            onChange={(event) => updateResource(resource.id, { description: event.target.value })}
+          />
+          <button
+            aria-label="删除资源"
+            className="icon-button"
+            type="button"
+            onClick={() => onChange(resources.filter((item) => item.id !== resource.id))}
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function InspectorPanel({
   selectedNode,
   selectedEdge,
+  settings,
   onUpdateNode,
   onUpdateEdge,
+  onUpdateSettings,
   onGenerateNode,
   onLintNode,
 }: InspectorPanelProps) {
+  const moveTemplateSection = (index: number, direction: -1 | 1) => {
+    const next = [...settings.templateSections];
+    const target = index + direction;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    onUpdateSettings({ ...settings, templateSections: next });
+  };
+
+  const updateTemplateSection = (section: TemplateSection, patch: Partial<TemplateSection>) => {
+    onUpdateSettings({
+      ...settings,
+      templateSections: settings.templateSections.map((item) =>
+        item.key === section.key ? { ...item, ...patch } : item,
+      ),
+    });
+  };
+
   if (selectedEdge) {
     const data = selectedEdge.data;
     return (
@@ -77,9 +196,9 @@ export function InspectorPanel({
               })
             }
           >
-            {relationOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
+            {Object.entries(relationLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
               </option>
             ))}
           </select>
@@ -108,19 +227,6 @@ export function InspectorPanel({
             }
           />
         </label>
-        <label className="checkbox">
-          <input
-            checked={Boolean(data?.required)}
-            type="checkbox"
-            onChange={(event) =>
-              onUpdateEdge({
-                ...selectedEdge,
-                data: { ...data!, required: event.target.checked },
-              })
-            }
-          />
-          强制关系
-        </label>
       </aside>
     );
   }
@@ -129,7 +235,7 @@ export function InspectorPanel({
     return (
       <aside className="inspector empty">
         <div className="panel-title">属性面板</div>
-        <p>选择节点或流程线后编辑配置。</p>
+        <p>选择节点或流程线后编辑配置。节点之间从右侧连接点拖到另一个节点左侧连接点即可连线。</p>
       </aside>
     );
   }
@@ -194,70 +300,168 @@ export function InspectorPanel({
             })
           }
         >
-          <option value="structured">structured</option>
-          <option value="manual">manual</option>
-          <option value="hybrid">hybrid</option>
+          {Object.entries(editModeLabels).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
         </select>
+        <span className="field-help">{editModeHelp[selectedNode.data.editMode]}</span>
       </label>
-      {arrayFields.map(([field, label]) => (
+
+      {primaryFields.map(([field, label]) => (
         <label key={String(field)}>
           {label}
           <textarea
             value={listToText(selectedNode.data[field])}
-            onChange={(event) =>
-              updateData({ [field]: textToList(event.target.value) })
-            }
+            onChange={(event) => updateData({ [field]: textToList(event.target.value) })}
           />
         </label>
       ))}
-      <div className="rule-header">
-        <span>规则块</span>
-        <button type="button" onClick={addRule}>
-          <Plus size={16} />
-          添加
-        </button>
-      </div>
-      {selectedNode.data.rules.map((rule) => (
-        <div className="rule-editor" key={rule.id}>
-          <select
-            value={rule.type}
-            onChange={(event) =>
-              updateRule(rule.id, { type: event.target.value as RuleType })
-            }
-          >
-            {ruleTypes.map((type) => (
-              <option key={type} value={type}>
-                #{type}
-              </option>
-            ))}
-          </select>
+
+      <Section title="更多字段">
+        {extraFields.map(([field, label]) => (
+          <label key={String(field)}>
+            {label}
+            <textarea
+              value={listToText(selectedNode.data[field])}
+              onChange={(event) => updateData({ [field]: textToList(event.target.value) })}
+            />
+          </label>
+        ))}
+        <div className="rule-header">
+          <span>规则块</span>
+          <button type="button" onClick={addRule}>
+            <Plus size={16} />
+            添加
+          </button>
+        </div>
+        {selectedNode.data.rules.map((rule) => (
+          <div className="rule-editor" key={rule.id}>
+            <select
+              value={rule.type}
+              onChange={(event) =>
+                updateRule(rule.id, { type: event.target.value as RuleType })
+              }
+            >
+              {ruleTypes.map((type) => (
+                <option key={type} value={type}>
+                  #{type}
+                </option>
+              ))}
+            </select>
+            <textarea
+              placeholder="规则内容"
+              value={rule.content}
+              onChange={(event) => updateRule(rule.id, { content: event.target.value })}
+            />
+            <button
+              aria-label="删除规则"
+              className="icon-button"
+              type="button"
+              onClick={() =>
+                updateData({
+                  rules: selectedNode.data.rules.filter((item) => item.id !== rule.id),
+                })
+              }
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ))}
+        <label>
+          手写 Markdown
           <textarea
-            placeholder="规则内容"
-            value={rule.content}
-            onChange={(event) => updateRule(rule.id, { content: event.target.value })}
+            className="markdown-box"
+            value={selectedNode.data.manualMarkdown}
+            onChange={(event) => updateData({ manualMarkdown: event.target.value })}
           />
-          <button
-            aria-label="删除规则"
-            className="icon-button"
-            type="button"
-            onClick={() =>
-              updateData({
-                rules: selectedNode.data.rules.filter((item) => item.id !== rule.id),
+        </label>
+      </Section>
+
+      <Section title="绑定资源">
+        <ResourceEditor
+          title="脚本"
+          kind="script"
+          resources={selectedNode.data.scripts}
+          onChange={(scripts) => updateData({ scripts })}
+        />
+        <ResourceEditor
+          title="References"
+          kind="reference"
+          resources={selectedNode.data.referenceResources}
+          onChange={(referenceResources) => updateData({ referenceResources })}
+        />
+        <ResourceEditor
+          title="Assets"
+          kind="asset"
+          resources={selectedNode.data.assets}
+          onChange={(assets) => updateData({ assets })}
+        />
+        <ResourceEditor
+          title="其他附件"
+          kind="attachment"
+          resources={selectedNode.data.attachments}
+          onChange={(attachments) => updateData({ attachments })}
+        />
+      </Section>
+
+      <Section title="项目模板">
+        <label>
+          模板模式
+          <select
+            value={settings.templateMode}
+            onChange={(event) =>
+              onUpdateSettings({
+                ...settings,
+                templateMode: event.target.value as ProjectSettings["templateMode"],
               })
             }
           >
-            <Trash2 size={16} />
-          </button>
-        </div>
-      ))}
-      <label>
-        手写 Markdown
-        <textarea
-          className="markdown-box"
-          value={selectedNode.data.manualMarkdown}
-          onChange={(event) => updateData({ manualMarkdown: event.target.value })}
-        />
-      </label>
+            <option value="simple">简单模式：调整区块顺序</option>
+            <option value="advanced">高级模式：手写模板</option>
+          </select>
+        </label>
+        {settings.templateMode === "simple" ? (
+          <div className="template-section-list">
+            {settings.templateSections.map((section, index) => (
+              <div className="template-section-item" key={section.key}>
+                <label className="checkbox">
+                  <input
+                    checked={section.enabled}
+                    type="checkbox"
+                    onChange={(event) =>
+                      updateTemplateSection(section, { enabled: event.target.checked })
+                    }
+                  />
+                  {section.title}
+                </label>
+                <div className="template-section-actions">
+                  <button type="button" onClick={() => moveTemplateSection(index, -1)}>
+                    <ChevronUp size={14} />
+                  </button>
+                  <button type="button" onClick={() => moveTemplateSection(index, 1)}>
+                    <ChevronDown size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <label>
+            Markdown 模板
+            <textarea
+              className="markdown-box"
+              placeholder="{{name}}, {{description}}, {{inputs}}, {{outputs}}, {{scripts}}, {{assets}}"
+              value={settings.advancedTemplate}
+              onChange={(event) =>
+                onUpdateSettings({ ...settings, advancedTemplate: event.target.value })
+              }
+            />
+          </label>
+        )}
+      </Section>
+
       <div className="action-row">
         <button type="button" onClick={() => onGenerateNode(selectedNode.id)}>
           生成 SKILL.md

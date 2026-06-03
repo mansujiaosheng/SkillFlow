@@ -25,4 +25,23 @@ describe("lintProject", () => {
 
     expect(report.critical.some((item) => item.message === "流程中存在循环依赖")).toBe(true);
   });
+
+  it("reports resource quality issues", () => {
+    const node = createSkillNode("a", { x: 0, y: 0 }, "资源 Skill");
+    node.data.scripts = [
+      {
+        id: "script-1",
+        kind: "script",
+        name: "脚本",
+        path: "",
+        resourceType: "ps1",
+        description: "",
+      },
+    ];
+
+    const report = lintProject([node], []);
+
+    expect(report.warnings.some((item) => item.message.includes("缺少路径"))).toBe(true);
+    expect(report.warnings.some((item) => item.message.includes("缺少用途说明"))).toBe(true);
+  });
 });

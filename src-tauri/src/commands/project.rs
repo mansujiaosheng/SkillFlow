@@ -103,6 +103,9 @@ fn initial_state(payload: CreateProjectPayload, root: &Path) -> ProjectState {
             theme: "system".to_string(),
             auto_lint: true,
             auto_generate_on_save: false,
+            template_mode: Some("simple".to_string()),
+            template_sections: None,
+            advanced_template: Some(String::new()),
         },
     }
 }
@@ -144,6 +147,50 @@ fn render_list(items: &[String], fallback: &str) -> String {
             .collect::<Vec<_>>()
             .join("\n")
     }
+}
+
+fn render_resources(data: &Value, key: &str) -> String {
+    data.get(key)
+        .and_then(Value::as_array)
+        .map(|resources| {
+            resources
+                .iter()
+                .filter_map(|resource| {
+                    let name = string_field(resource, "name");
+                    let path = string_field(resource, "path");
+                    let resource_type = string_field(resource, "resourceType");
+                    let description = string_field(resource, "description");
+                    if name.is_empty() && path.is_empty() && resource_type.is_empty() && description.is_empty() {
+                        return None;
+                    }
+                    let type_label = if resource_type.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" ({resource_type})")
+                    };
+                    let path_label = if path.is_empty() {
+                        String::new()
+                    } else {
+                        format!("：{path}")
+                    };
+                    let description_label = if description.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" - {description}")
+                    };
+                    Some(format!(
+                        "- {}{}{}{}",
+                        if name.is_empty() { "未命名资源" } else { &name },
+                        type_label,
+                        path_label,
+                        description_label
+                    ))
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|items| !items.is_empty())
+        .map(|items| items.join("\n"))
+        .unwrap_or_else(|| "- 未配置".to_string())
 }
 
 fn rule_contents(data: &Value, rule_type: &str) -> Vec<String> {
@@ -274,9 +321,30 @@ fn generate_skill_markdown(node: &Value, nodes: &[Value], edges: &[Value]) -> Op
     fallbacks.extend(rule_contents(data, "fallback"));
     let mut references = array_field(data, "references");
     references.extend(rule_contents(data, "ref"));
+    references.extend(
+        data.get("referenceResources")
+            .and_then(Value::as_array)
+            .map(|resources| {
+                resources
+                    .iter()
+                    .map(|resource| {
+                        let name = string_field(resource, "name");
+                        let path = string_field(resource, "path");
+                        let description = string_field(resource, "description");
+                        format!(
+                            "{}{}{}",
+                            if name.is_empty() { "未命名参考资料" } else { &name },
+                            if path.is_empty() { String::new() } else { format!("：{path}") },
+                            if description.is_empty() { String::new() } else { format!(" - {description}") }
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+    );
 
     Some(format!(
-        "---\nname: {name}\ndescription: \"{}\"\n---\n\n# {name}\n\n## 使用时机\n\n{}\n\n## 不适用场景\n\n{}\n\n## 输入\n\n{}\n\n## 输出\n\n{}\n\n## 上游依赖\n\n{}\n\n## 下游交接\n\n{}\n\n## 必须遵守\n\n{}\n\n## 禁止行为\n\n{}\n\n## 可用工具\n\n{}\n\n## 执行流程\n\n{}\n\n## 完成标准\n\n{}\n\n## 失败处理\n\n{}\n\n## 参考资料\n\n{}\n",
+        "---\nname: {name}\ndescription: \"{}\"\n---\n\n# {name}\n\n## 使用时机\n\n{}\n\n## 不适用场景\n\n{}\n\n## 输入\n\n{}\n\n## 输出\n\n{}\n\n## 上游依赖\n\n{}\n\n## 下游交接\n\n{}\n\n## 必须遵守\n\n{}\n\n## 禁止行为\n\n{}\n\n## 可用工具\n\n{}\n\n## 执行流程\n\n{}\n\n## 完成标准\n\n{}\n\n## 失败处理\n\n{}\n\n## 参考资料\n\n{}\n\n## 绑定脚本\n\n{}\n\n## 绑定资源\n\n{}\n\n## 其他附件\n\n{}\n",
         description.replace('"', "\\\""),
         render_list(&array_field(data, "whenToUse"), "- 未配置"),
         render_list(&array_field(data, "whenNotToUse"), "- 未配置"),
@@ -291,7 +359,31 @@ fn generate_skill_markdown(node: &Value, nodes: &[Value], edges: &[Value]) -> Op
         render_list(&checks, "- 未配置"),
         render_list(&fallbacks, "- 未配置"),
         render_list(&references, "- 未配置"),
+        render_resources(data, "scripts"),
+        render_resources(data, "assets"),
+        render_resources(data, "attachments"),
     ))
+}
+
+fn unique_skill_folder(data: &Value, node: &Value, counts: &mut HashMap<String, usize>) -> String {
+    let folder = string_field(data, "folder");
+    let base = if folder.is_empty() {
+        slugify(&string_field(data, "name"))
+    } else {
+        slugify(&folder)
+    };
+    let base = if base.is_empty() {
+        slugify(node.get("id").and_then(Value::as_str).unwrap_or("skill"))
+    } else {
+        base
+    };
+    let count = counts.entry(base.clone()).or_insert(0);
+    *count += 1;
+    if *count == 1 {
+        base
+    } else {
+        format!("{base}-{count}")
+    }
 }
 
 fn generate_workflow_markdown(nodes: &[Value], edges: &[Value]) -> String {
@@ -558,17 +650,13 @@ pub fn generate_skills(payload: ProjectState) -> Result<(), String> {
     let root = PathBuf::from(&payload.project_root);
     save_project(payload.clone())?;
     fs::create_dir_all(root.join("skills")).map_err(|err| format!("创建 skills 目录失败：{err}"))?;
+    let mut folder_counts = HashMap::new();
 
     for node in &payload.workflow.nodes {
         let Some(data) = skill_data(node) else {
             continue;
         };
-        let folder = string_field(data, "folder");
-        let folder = if folder.is_empty() {
-            slugify(&string_field(data, "name"))
-        } else {
-            slugify(&folder)
-        };
+        let folder = unique_skill_folder(data, node, &mut folder_counts);
         if folder.is_empty() {
             continue;
         }

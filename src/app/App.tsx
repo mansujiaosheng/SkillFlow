@@ -26,6 +26,8 @@ import { lintProject } from "../skill/skillLinter";
 import {
   defaultSettings,
   createDefaultSkillData,
+  normalizeProjectState,
+  normalizeProjectSettings,
   schemaVersion,
   slugify,
   type CreateProjectPayload,
@@ -65,7 +67,7 @@ function createLocalProject(name: string, description: string, parentDir: string
     },
     workflow: { nodes: [], edges: [] },
     rules: [],
-    settings: defaultSettings,
+    settings: normalizeProjectSettings(defaultSettings),
   };
 }
 
@@ -125,7 +127,7 @@ export default function App() {
     const created = isTauriRuntime()
       ? await invoke<ProjectState>("create_project", { payload }).catch(() => localProject)
       : localProject;
-    setProjectState(created);
+    setProjectState(normalizeProjectState(created));
     setStatus(
       isTauriRuntime()
         ? `已创建项目：${created.project.name}`
@@ -140,7 +142,7 @@ export default function App() {
         setStatus("浏览器预览模式下没有可打开的本地缓存项目");
         return;
       }
-      setProjectState(JSON.parse(cached) as ProjectState);
+      setProjectState(normalizeProjectState(JSON.parse(cached) as ProjectState));
       setStatus("已打开浏览器缓存项目");
       return;
     }
@@ -148,7 +150,7 @@ export default function App() {
     const projectRoot = await open({ directory: true, multiple: false }).catch(() => null);
     if (!projectRoot || Array.isArray(projectRoot)) return;
     const opened = await invoke<ProjectState>("open_project", { projectRoot });
-    setProjectState(opened);
+    setProjectState(normalizeProjectState(opened));
     setStatus(`已打开项目：${opened.project.name}`);
   };
 
@@ -181,6 +183,7 @@ export default function App() {
           firstNode,
           projectState.workflow.nodes,
           projectState.workflow.edges,
+          projectState.settings,
         ),
       );
     }
@@ -231,6 +234,24 @@ export default function App() {
     setSelectedNodeId(node.id);
     setSelectedEdgeId(undefined);
     setStatus(`已添加节点：${node.data.name}`);
+  };
+
+  const updateSettings = (settings: ProjectState["settings"]) => {
+    setProjectState((current) =>
+      current
+        ? {
+            ...current,
+            project: { ...current.project, updatedAt: nowIso() },
+            settings,
+          }
+        : current,
+    );
+  };
+
+  const selectLintNode = (nodeId?: string) => {
+    if (!nodeId) return;
+    setSelectedNodeId(nodeId);
+    setSelectedEdgeId(undefined);
   };
 
   const renderHome = () => (
@@ -329,6 +350,7 @@ export default function App() {
           <InspectorPanel
             selectedNode={selectedNode}
             selectedEdge={selectedEdge}
+            settings={projectState.settings}
             onUpdateNode={(node) =>
               updateWorkflow({
                 nodes: nodes.map((item) => (item.id === node.id ? node : item)),
@@ -339,10 +361,11 @@ export default function App() {
                 edges: edges.map((item) => (item.id === edge.id ? edge : item)),
               })
             }
+            onUpdateSettings={updateSettings}
             onGenerateNode={(nodeId) => {
               const node = nodes.find((item) => item.id === nodeId);
               if (!node) return;
-              setPreview(generateSkillMarkdown(node, nodes, edges));
+              setPreview(generateSkillMarkdown(node, nodes, edges, projectState.settings));
               setStatus(`已生成预览：${node.data.name}`);
             }}
             onLintNode={(nodeId) => {
@@ -354,6 +377,47 @@ export default function App() {
             }}
           />
         </div>
+        {lintReport ? (
+          <section className="lint-panel">
+            <div className="lint-panel-header">
+              <strong>Lint 结果</strong>
+              <button type="button" onClick={() => setLintReport(undefined)}>
+                关闭
+              </button>
+            </div>
+            {[
+              ["严重问题", lintReport.critical],
+              ["警告", lintReport.warnings],
+              ["建议", lintReport.suggestions],
+            ].map(([title, issues]) => (
+              <div className="lint-group" key={title as string}>
+                <h3>{title as string}</h3>
+                {(issues as typeof lintReport.critical).length ? (
+                  (issues as typeof lintReport.critical).map((issue) => {
+                    const nodeName =
+                      nodes.find((node) => node.id === issue.nodeId)?.data.name ||
+                      issue.nodeId ||
+                      "项目";
+                    return (
+                      <button
+                        className="lint-item"
+                        key={issue.id}
+                        type="button"
+                        onClick={() => selectLintNode(issue.nodeId)}
+                      >
+                        <span>{nodeName}</span>
+                        <strong>{issue.message}</strong>
+                        {issue.action ? <small>{issue.action}</small> : null}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <p>暂无</p>
+                )}
+              </div>
+            ))}
+          </section>
+        ) : null}
         {preview ? (
           <section className="preview-panel">
             <pre>{preview}</pre>

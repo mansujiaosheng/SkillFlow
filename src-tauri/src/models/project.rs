@@ -19,6 +19,9 @@ pub struct ProjectSettings {
     pub theme: String,
     pub auto_lint: bool,
     pub auto_generate_on_save: bool,
+    pub template_mode: Option<String>,
+    pub template_sections: Option<Vec<Value>>,
+    pub advanced_template: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
